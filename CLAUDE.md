@@ -21,23 +21,23 @@ open-foundry/
     software/           Code analysis roles (system_architect, api_explorer, ...)
     finance/            Financial analysis roles (macro_economist, gold_analyst, ...)
     orchestrator/       Orchestration strategies (default, finance_moderator)
-  topics/               Discussion topic definitions (YAML frontmatter + question body)
+  missions/             Mission definitions (YAML frontmatter + question body)
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
-  scripts/              Orchestration scripts (forum.py)
+  scripts/              Orchestration scripts (forge.py)
   .claude/skills/       Agent Skills for guided creation workflows
 ```
 
 ## Running a Discussion
 
 ```bash
-./scripts/forum.py topics/{slug}.md
-./scripts/forum.py topics/{slug}.md --dry-run        # validate without running
-./scripts/forum.py topics/{slug}.md --model opus
-./scripts/forum.py topics/{slug}.md --resume sessions/{slug}-{timestamp}
+./scripts/forge.py missions/{slug}.md
+./scripts/forge.py missions/{slug}.md --dry-run        # validate without running
+./scripts/forge.py missions/{slug}.md --model opus
+./scripts/forge.py missions/{slug}.md --resume sessions/{slug}-{timestamp}
 ```
 
-Use `/create-topic` skill to create a new topic. Use `/create-role` skill to
-add new agent roles. See README.md for full documentation.
+Use `/build-taskforce` skill to set up a discussion or task. Use `/create-role`
+skill to add new agent roles. See README.md for full documentation.
 
 ## Temporary Output
 
@@ -49,7 +49,7 @@ with the project and easy to find. The directory is git-ignored.
 ## Python
 
 - Recommended version: **3.12+**
-- The orchestrator script (`scripts/forum.py`) is stdlib-only -- no
+- The orchestrator script (`scripts/forge.py`) is stdlib-only -- no
   external dependencies. No virtualenv setup needed to run it.
 - If future scripts add dependencies:
   ```bash

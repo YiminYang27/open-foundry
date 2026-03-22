@@ -19,15 +19,15 @@ the reasoning is preserved in a searchable transcript.
 git clone https://github.com/YiminYang27/open-foundry.git
 cd open-foundry
 
-# Create a topic file (or use the /create-topic skill in Claude Code)
+# Create a topic file (or use the /build-taskforce skill in Claude Code)
 # Then run:
-./scripts/forum.py topics/your-topic.md
+./scripts/forge.py missions/your-mission.md
 
 # Options:
-./scripts/forum.py topics/your-topic.md --dry-run          # validate without calling Claude
-./scripts/forum.py topics/your-topic.md --model opus        # override model
-./scripts/forum.py topics/your-topic.md --max-turns 50      # override turn limit
-./scripts/forum.py topics/your-topic.md --resume sessions/your-topic-20260322-001929
+./scripts/forge.py missions/your-mission.md --dry-run          # validate without calling Claude
+./scripts/forge.py missions/your-mission.md --model opus        # override model
+./scripts/forge.py missions/your-mission.md --max-turns 50      # override turn limit
+./scripts/forge.py missions/your-mission.md --resume sessions/your-mission-20260322-001929
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -69,7 +69,7 @@ open-foundry/
     software/           Code analysis roles
     finance/            Financial analysis roles
     orchestrator/       Orchestration strategies
-  topics/               Discussion topic files
+  missions/             Mission definition files
   sessions/             Session output (git-ignored)
   scripts/              Orchestration scripts
   .claude/skills/       Agent Skills for Claude Code / Copilot
@@ -124,12 +124,12 @@ next and when to declare consensus. Each file has two sections:
 | `default` | General-purpose: balanced rotation, standard consensus |
 | `finance_moderator` | Evidence quality gating, multi-domain coverage, structured bull/bear close |
 
-### `topics/` -- Discussion Definitions
+### `missions/` -- Mission Definitions
 
-A topic file specifies the question, which agents participate, and
+A mission file specifies the question, which agents participate, and
 session parameters.
 
-**Format**: `topics/{slug}.md`
+**Format**: `missions/{slug}.md`
 
 ```yaml
 ---
@@ -170,7 +170,7 @@ searches. Other agents can read each other's notes to avoid redundant work.
 
 ### `scripts/` -- Orchestration
 
-`forum.py` is the main orchestrator. It parses the topic file, loads
+`forge.py` is the main orchestrator. It parses the topic file, loads
 roles, runs the discussion loop, and produces the session output. It is
 stdlib-only Python with no external dependencies.
 
@@ -182,7 +182,7 @@ These follow the open [Agent Skills specification](https://agentskills.io/specif
 | Skill | Trigger |
 |-------|---------|
 | `create-role` | `/create-role` -- guided role creation with overlap detection |
-| `create-topic` | `/create-topic` -- guided topic creation with agent selection |
+| `build-taskforce` | `/build-taskforce` -- guided taskforce assembly with agent selection |
 
 ---
 
@@ -201,7 +201,7 @@ Use the Agent Skills for guided workflows:
 
 ```
 /create-role    # overlap checking, persona generation, quality validation
-/create-topic   # question sharpening, agent selection, deliverable definition
+/build-taskforce   # question sharpening, agent selection, deliverable definition
 ```
 
 Or create files manually following the formats above.
