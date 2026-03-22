@@ -202,14 +202,15 @@ def call_claude(prompt: str, model: str, skip_perms: bool = False,
         info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
         return ""
 
-    cmd = ['claude', '-p', prompt, '--model', model]
+    # Pass prompt via stdin to avoid OS ARG_MAX limit on long prompts
+    cmd = ['claude', '-p', '-', '--model', model]
     if skip_perms:
         cmd.append('--dangerously-skip-permissions')
 
     for attempt in range(2):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True,
-                                    timeout=timeout)
+            result = subprocess.run(cmd, input=prompt, capture_output=True,
+                                    text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             warn(f"{label} timed out after {timeout}s")
             if attempt == 0:
@@ -510,11 +511,12 @@ ASCII only."""
     info("Running synthesizer (this may take a few minutes)...")
     # NOTE: Does not use call_claude -- synthesizer writes synthesis.md
     # directly via file tools. capture_output=False lets user see progress.
+    # Uses stdin to avoid OS ARG_MAX limit on long prompts.
     try:
         subprocess.run(
-            ['claude', '-p', synth_prompt, '--model', model,
+            ['claude', '-p', '-', '--model', model,
              '--dangerously-skip-permissions'],
-            capture_output=False, text=True, timeout=600
+            input=synth_prompt, capture_output=False, text=True, timeout=600
         )
     except subprocess.TimeoutExpired:
         warn("Synthesizer timed out after 600s")
@@ -735,6 +737,7 @@ def main() -> None:
         # Consensus?
         if speaker == "CONSENSUS":
             ok(f"Consensus reached: {reasoning}")
+            _update_state("completed")
             finalize(session, orch, model, "yes", args.dry_run)
             synthesize(session, roles_dir, topic_body, model, args.dry_run)
             print(f"\n{BOLD}=== Forum Complete (consensus at turn {session.utterances}) ==={NC}")
@@ -796,6 +799,7 @@ def main() -> None:
 
     # Max turns reached
     warn(f"Max turns ({max_turns}) reached without consensus")
+    _update_state("completed")
     finalize(session, orch, model, "no (max turns reached)", args.dry_run)
     synthesize(session, roles_dir, topic_body, model, args.dry_run)
 

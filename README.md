@@ -19,7 +19,7 @@ the reasoning is preserved in a searchable transcript.
 git clone https://github.com/YiminYang27/open-foundry.git
 cd open-foundry
 
-# Create a topic file (or use the /create-topic skill in Claude Code)
+# Create a topic file (or use the /build-taskforce skill in Claude Code)
 # Then run:
 ./scripts/forum.py topics/your-topic.md
 
@@ -182,7 +182,7 @@ These follow the open [Agent Skills specification](https://agentskills.io/specif
 | Skill | Trigger |
 |-------|---------|
 | `create-role` | `/create-role` -- guided role creation with overlap detection |
-| `create-topic` | `/create-topic` -- guided topic creation with agent selection |
+| `build-taskforce` | `/build-taskforce` -- guided taskforce assembly with agent selection |
 
 ---
 
@@ -201,7 +201,7 @@ Use the Agent Skills for guided workflows:
 
 ```
 /create-role    # overlap checking, persona generation, quality validation
-/create-topic   # question sharpening, agent selection, deliverable definition
+/build-taskforce   # question sharpening, agent selection, deliverable definition
 ```
 
 Or create files manually following the formats above.

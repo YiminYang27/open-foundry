@@ -36,8 +36,8 @@ open-foundry/
 ./scripts/forum.py topics/{slug}.md --resume sessions/{slug}-{timestamp}
 ```
 
-Use `/create-topic` skill to create a new topic. Use `/create-role` skill to
-add new agent roles. See README.md for full documentation.
+Use `/build-taskforce` skill to set up a discussion or task. Use `/create-role`
+skill to add new agent roles. See README.md for full documentation.
 
 ## Temporary Output
 
