@@ -12,7 +12,7 @@ missions/{slug}/
 
 Slug is lowercase-hyphenated (e.g. `gold-price-outlook`).
 
-`forge.py` accepts the directory path: `./scripts/forge.py missions/{slug}`
+`forge.py` accepts a mission slug: `./scripts/forge.py {slug}`
 
 ## Frontmatter Schema
 

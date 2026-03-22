@@ -163,6 +163,6 @@ Show the user:
 2. **Panel summary**: final agent composition with role descriptions
 3. **Run command**:
    ```bash
-   ./scripts/forge.py missions/{slug}
+   ./scripts/forge.py {slug}
    ```
 4. **Estimated session**: approximate turns and factor-to-agent coverage

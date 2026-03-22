@@ -21,13 +21,13 @@ cd open-foundry
 
 # Create a mission (or use the /build-taskforce skill in Claude Code)
 # Then run:
-./scripts/forge.py missions/your-mission
+./scripts/forge.py your-mission
 
 # Options:
-./scripts/forge.py missions/your-mission --dry-run          # validate without calling Claude
-./scripts/forge.py missions/your-mission --model opus        # override model
-./scripts/forge.py missions/your-mission --max-turns 50      # override turn limit
-./scripts/forge.py missions/your-mission --resume sessions/your-mission-20260322-001929
+./scripts/forge.py your-mission --dry-run          # validate without calling Claude
+./scripts/forge.py your-mission --model opus        # override model
+./scripts/forge.py your-mission --max-turns 50      # override turn limit
+./scripts/forge.py your-mission --resume your-mission-20260322-001929
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -182,11 +182,13 @@ searches. Other agents can read each other's notes to avoid redundant work.
 roles, runs the discussion loop, and produces the session output. It is
 stdlib-only Python with no external dependencies.
 
-It accepts a mission directory or a direct path to MISSION.md:
+It accepts a mission slug (looked up in `missions/`), a directory path,
+or a direct path to MISSION.md:
 
 ```bash
-./scripts/forge.py missions/gold-price-outlook           # directory
-./scripts/forge.py missions/gold-price-outlook/MISSION.md # also works
+./scripts/forge.py gold-price-outlook                       # slug
+./scripts/forge.py missions/gold-price-outlook               # directory
+./scripts/forge.py missions/gold-price-outlook/MISSION.md    # also works
 ```
 
 ### `.claude/skills/` -- Agent Skills

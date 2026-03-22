@@ -30,10 +30,10 @@ open-foundry/
 ## Running a Discussion
 
 ```bash
-./scripts/forge.py missions/{slug}
-./scripts/forge.py missions/{slug} --dry-run        # validate without running
-./scripts/forge.py missions/{slug} --model opus
-./scripts/forge.py missions/{slug} --resume sessions/{slug}-{timestamp}
+./scripts/forge.py {slug}
+./scripts/forge.py {slug} --dry-run        # validate without running
+./scripts/forge.py {slug} --model opus
+./scripts/forge.py {slug} --resume {slug}-{timestamp}
 ```
 
 Use `/build-taskforce` skill to set up a discussion or task. Use `/create-role`

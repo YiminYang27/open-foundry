@@ -21,9 +21,9 @@ Options:
   --help          Show this help message
 
 Examples:
-  ./scripts/forge.py missions/gold-price-outlook
-  ./scripts/forge.py missions/gold-price-outlook --max-turns 50 --model opus
-  ./scripts/forge.py missions/gold-price-outlook --resume sessions/gold-price-outlook-20260322-001929
+  ./scripts/forge.py gold-price-outlook
+  ./scripts/forge.py gold-price-outlook --max-turns 50 --model opus
+  ./scripts/forge.py gold-price-outlook --resume gold-price-outlook-20260322-001929
 """
 
 import argparse
@@ -552,13 +552,13 @@ def main() -> None:
         epilog=__doc__,
         add_help=True,
     )
-    parser.add_argument("topic_file", help="Path to mission directory or MISSION.md file")
+    parser.add_argument("topic_file", help="Mission slug or path (e.g. gold-price-outlook)")
     parser.add_argument("--max-turns", type=int, default=None,
                         help="Override max utterances")
     parser.add_argument("--model", default=None,
                         help="Override model (opus/sonnet/haiku)")
-    parser.add_argument("--resume", default=None, metavar="DIR",
-                        help="Resume from a previous session directory")
+    parser.add_argument("--resume", default=None, metavar="SESSION",
+                        help="Resume session (slug-timestamp, e.g. gold-price-outlook-20260322-001929)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print prompts without calling Claude")
     args = parser.parse_args()
@@ -570,7 +570,13 @@ def main() -> None:
 
     topic_path = Path(args.topic_file)
     if not topic_path.is_absolute():
-        topic_path = project_root / topic_path
+        # Try as slug under missions/ first, then as literal path
+        missions_dir = project_root / "missions"
+        candidate = missions_dir / topic_path
+        if candidate.exists():
+            topic_path = candidate
+        else:
+            topic_path = project_root / topic_path
     # Support both directory (find MISSION.md inside) and direct file path
     if topic_path.is_dir():
         mission_file = topic_path / "MISSION.md"
@@ -584,7 +590,13 @@ def main() -> None:
     if args.resume:
         resume_dir = Path(args.resume)
         if not resume_dir.is_absolute():
-            resume_dir = project_root / resume_dir
+            # Try as session name under sessions/ first, then as literal path
+            sessions_dir = project_root / "sessions"
+            candidate = sessions_dir / resume_dir
+            if candidate.exists():
+                resume_dir = candidate
+            else:
+                resume_dir = project_root / resume_dir
         if not resume_dir.exists():
             fatal(f"Resume directory not found: {resume_dir}")
 
