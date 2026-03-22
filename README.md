@@ -21,13 +21,13 @@ cd open-foundry
 
 # Create a topic file (or use the /build-taskforce skill in Claude Code)
 # Then run:
-./scripts/forge.py topics/your-topic.md
+./scripts/forge.py missions/your-mission.md
 
 # Options:
-./scripts/forge.py topics/your-topic.md --dry-run          # validate without calling Claude
-./scripts/forge.py topics/your-topic.md --model opus        # override model
-./scripts/forge.py topics/your-topic.md --max-turns 50      # override turn limit
-./scripts/forge.py topics/your-topic.md --resume sessions/your-topic-20260322-001929
+./scripts/forge.py missions/your-mission.md --dry-run          # validate without calling Claude
+./scripts/forge.py missions/your-mission.md --model opus        # override model
+./scripts/forge.py missions/your-mission.md --max-turns 50      # override turn limit
+./scripts/forge.py missions/your-mission.md --resume sessions/your-mission-20260322-001929
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -69,7 +69,7 @@ open-foundry/
     software/           Code analysis roles
     finance/            Financial analysis roles
     orchestrator/       Orchestration strategies
-  topics/               Discussion topic files
+  missions/             Mission definition files
   sessions/             Session output (git-ignored)
   scripts/              Orchestration scripts
   .claude/skills/       Agent Skills for Claude Code / Copilot
@@ -124,12 +124,12 @@ next and when to declare consensus. Each file has two sections:
 | `default` | General-purpose: balanced rotation, standard consensus |
 | `finance_moderator` | Evidence quality gating, multi-domain coverage, structured bull/bear close |
 
-### `topics/` -- Discussion Definitions
+### `missions/` -- Mission Definitions
 
-A topic file specifies the question, which agents participate, and
+A mission file specifies the question, which agents participate, and
 session parameters.
 
-**Format**: `topics/{slug}.md`
+**Format**: `missions/{slug}.md`
 
 ```yaml
 ---

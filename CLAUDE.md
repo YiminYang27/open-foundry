@@ -21,7 +21,7 @@ open-foundry/
     software/           Code analysis roles (system_architect, api_explorer, ...)
     finance/            Financial analysis roles (macro_economist, gold_analyst, ...)
     orchestrator/       Orchestration strategies (default, finance_moderator)
-  topics/               Discussion topic definitions (YAML frontmatter + question body)
+  missions/             Mission definitions (YAML frontmatter + question body)
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
   scripts/              Orchestration scripts (forge.py)
   .claude/skills/       Agent Skills for guided creation workflows
@@ -30,10 +30,10 @@ open-foundry/
 ## Running a Discussion
 
 ```bash
-./scripts/forge.py topics/{slug}.md
-./scripts/forge.py topics/{slug}.md --dry-run        # validate without running
-./scripts/forge.py topics/{slug}.md --model opus
-./scripts/forge.py topics/{slug}.md --resume sessions/{slug}-{timestamp}
+./scripts/forge.py missions/{slug}.md
+./scripts/forge.py missions/{slug}.md --dry-run        # validate without running
+./scripts/forge.py missions/{slug}.md --model opus
+./scripts/forge.py missions/{slug}.md --resume sessions/{slug}-{timestamp}
 ```
 
 Use `/build-taskforce` skill to set up a discussion or task. Use `/create-role`

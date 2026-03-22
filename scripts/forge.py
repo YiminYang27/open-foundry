@@ -8,22 +8,22 @@ and detects consensus. All discussion is recorded to a readable
 transcript.
 
 Usage:
-  ./scripts/forge.py <topic-file> [OPTIONS]
+  ./scripts/forge.py <mission-file> [OPTIONS]
 
 Arguments:
-  <topic-file>   Path to a .md file with YAML frontmatter (agents, max_turns, model)
+  <mission-file>   Path to a .md file with YAML frontmatter (agents, max_turns, model)
 
 Options:
-  --max-turns N   Override max utterances (default: from topic file or 20)
+  --max-turns N   Override max utterances (default: from mission file or 20)
   --model MODEL   Override model for all claude -p calls
   --resume DIR    Resume from a previous run directory
   --dry-run       Print prompts without calling Claude
   --help          Show this help message
 
 Examples:
-  ./scripts/forge.py topics/gold-price-outlook.md
-  ./scripts/forge.py topics/gold-price-outlook.md --max-turns 50 --model opus
-  ./scripts/forge.py topics/gold-price-outlook.md --resume sessions/gold-price-outlook-20260322-001929
+  ./scripts/forge.py missions/gold-price-outlook.md
+  ./scripts/forge.py missions/gold-price-outlook.md --max-turns 50 --model opus
+  ./scripts/forge.py missions/gold-price-outlook.md --resume sessions/gold-price-outlook-20260322-001929
 """
 
 import argparse
@@ -552,7 +552,7 @@ def main() -> None:
         epilog=__doc__,
         add_help=True,
     )
-    parser.add_argument("topic_file", help="Path to topic .md file")
+    parser.add_argument("topic_file", help="Path to mission .md file")
     parser.add_argument("--max-turns", type=int, default=None,
                         help="Override max utterances")
     parser.add_argument("--model", default=None,

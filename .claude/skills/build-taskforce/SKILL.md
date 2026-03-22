@@ -10,7 +10,7 @@ A good taskforce produces deep, evidence-based output that converges on
 actionable insights. A bad one produces shallow agreement or aimless wandering.
 
 Your job is to clarify the task, assemble the right team, fill gaps, and
-produce a topic file that drives focused, high-quality collaboration.
+produce a mission file that drives focused, high-quality collaboration.
 
 Follow these steps in order:
 
@@ -127,11 +127,11 @@ Ask the user: "Does this taskforce look right? Any agents to add or remove?"
 
 Only proceed after the user confirms.
 
-### Step 6 -- Generate Topic File
+### Step 6 -- Generate Mission File
 
-Read `references/topic-format.md` for the exact format spec.
+Read `references/mission-format.md` for the exact format spec.
 
-Generate the topic file with:
+Generate the mission file with:
 
 1. **Frontmatter**: agents, orchestrator, max_turns, model
 2. **Title**: specific question or thesis as `# heading`
@@ -142,7 +142,7 @@ Generate the topic file with:
 6. **Deliverable**: numbered list of concrete output items the session
    should produce
 
-Write to `topics/{slug}.md` where slug is derived from the title.
+Write to `missions/{slug}.md` where slug is derived from the title.
 
 ### Step 7 -- Validate
 
@@ -161,6 +161,6 @@ Show the user:
 2. **Panel summary**: final agent composition with role descriptions
 3. **Run command**:
    ```bash
-   ./scripts/forge.py topics/{slug}.md
+   ./scripts/forge.py missions/{slug}.md
    ```
 4. **Estimated session**: approximate turns and factor-to-agent coverage

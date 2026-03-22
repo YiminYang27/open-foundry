@@ -109,7 +109,7 @@ Show the user:
 
 1. **File path**: where the role was written
 2. **Role summary**: name, expertise, category
-3. **Topic YAML snippet**: how to reference this role in a topic file:
+3. **Mission YAML snippet**: how to reference this role in a mission file:
 
 ```yaml
 agents:

@@ -1,8 +1,8 @@
-# Topic File Format Specification
+# Mission File Format Specification
 
 ## File Location
 
-`topics/{slug}.md` -- slug is lowercase-hyphenated (e.g. `gold-price-outlook.md`).
+`missions/{slug}.md` -- slug is lowercase-hyphenated (e.g. `gold-price-outlook.md`).
 
 ## Frontmatter Schema
 
@@ -22,7 +22,7 @@ model: <string>           # Optional. sonnet/opus/haiku. Default: sonnet
 ### 1. Title (required)
 
 `# <Title>` -- one-line heading. Should be a specific question or thesis, not
-a vague topic area.
+a vague area.
 
 Good: "Gold Price Outlook: 2026 H2 - 2027"
 Bad: "Gold Discussion"
