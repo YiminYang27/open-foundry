@@ -1,8 +1,18 @@
-# Mission File Format Specification
+# Mission Format Specification
 
-## File Location
+## Directory Structure
 
-`missions/{slug}.md` -- slug is lowercase-hyphenated (e.g. `gold-price-outlook.md`).
+Each mission is a directory under `missions/`:
+
+```
+missions/{slug}/
+  MISSION.md              # Required: mission definition (YAML frontmatter + body)
+  references/             # Optional: supporting documents, data, context
+```
+
+Slug is lowercase-hyphenated (e.g. `gold-price-outlook`).
+
+`forge.py` accepts the directory path: `./scripts/forge.py missions/{slug}`
 
 ## Frontmatter Schema
 
@@ -42,10 +52,11 @@ Each factor should be:
 - Phrased as a question or evaluation target
 - Relevant to the deliverable
 
-### 4. Source References (optional, for code-related topics)
+### 4. Source References (optional)
 
-Absolute file paths to source code or reference documents. Agents have file
-access via `--dangerously-skip-permissions` and can read these directly.
+File paths to source code, reference documents, or files in the mission's
+`references/` directory. Agents have file access via
+`--dangerously-skip-permissions` and can read these directly.
 
 ### 5. Deliverable (required)
 

@@ -8,10 +8,10 @@ and detects consensus. All discussion is recorded to a readable
 transcript.
 
 Usage:
-  ./scripts/forge.py <mission-file> [OPTIONS]
+  ./scripts/forge.py <mission> [OPTIONS]
 
 Arguments:
-  <mission-file>   Path to a .md file with YAML frontmatter (agents, max_turns, model)
+  <mission>   Path to a mission directory or MISSION.md file
 
 Options:
   --max-turns N   Override max utterances (default: from mission file or 20)
@@ -21,9 +21,9 @@ Options:
   --help          Show this help message
 
 Examples:
-  ./scripts/forge.py missions/gold-price-outlook.md
-  ./scripts/forge.py missions/gold-price-outlook.md --max-turns 50 --model opus
-  ./scripts/forge.py missions/gold-price-outlook.md --resume sessions/gold-price-outlook-20260322-001929
+  ./scripts/forge.py missions/gold-price-outlook
+  ./scripts/forge.py missions/gold-price-outlook --max-turns 50 --model opus
+  ./scripts/forge.py missions/gold-price-outlook --resume sessions/gold-price-outlook-20260322-001929
 """
 
 import argparse
@@ -552,7 +552,7 @@ def main() -> None:
         epilog=__doc__,
         add_help=True,
     )
-    parser.add_argument("topic_file", help="Path to mission .md file")
+    parser.add_argument("topic_file", help="Path to mission directory or MISSION.md file")
     parser.add_argument("--max-turns", type=int, default=None,
                         help="Override max utterances")
     parser.add_argument("--model", default=None,
@@ -571,8 +571,14 @@ def main() -> None:
     topic_path = Path(args.topic_file)
     if not topic_path.is_absolute():
         topic_path = project_root / topic_path
+    # Support both directory (find MISSION.md inside) and direct file path
+    if topic_path.is_dir():
+        mission_file = topic_path / "MISSION.md"
+        if not mission_file.exists():
+            fatal(f"MISSION.md not found in {topic_path}")
+        topic_path = mission_file
     if not topic_path.exists():
-        fatal(f"Topic file not found: {topic_path}")
+        fatal(f"Mission not found: {topic_path}")
 
     resume_dir = None
     if args.resume:
@@ -621,11 +627,11 @@ def main() -> None:
         info(f"Resuming from {work_dir}")
     else:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        slug = topic_path.stem
+        slug = topic_path.parent.name if topic_path.name == "MISSION.md" else topic_path.stem
         sessions_dir = project_root / "sessions"
         work_dir = sessions_dir / f"{slug}-{timestamp}"
         work_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(topic_path, work_dir / "topic.md")
+        shutil.copy(topic_path, work_dir / "mission.md")
 
     transcript = work_dir / "transcript.md"
     state_file = work_dir / "state.json"

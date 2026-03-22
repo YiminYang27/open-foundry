@@ -19,15 +19,15 @@ the reasoning is preserved in a searchable transcript.
 git clone https://github.com/YiminYang27/open-foundry.git
 cd open-foundry
 
-# Create a topic file (or use the /build-taskforce skill in Claude Code)
+# Create a mission (or use the /build-taskforce skill in Claude Code)
 # Then run:
-./scripts/forge.py missions/your-mission.md
+./scripts/forge.py missions/your-mission
 
 # Options:
-./scripts/forge.py missions/your-mission.md --dry-run          # validate without calling Claude
-./scripts/forge.py missions/your-mission.md --model opus        # override model
-./scripts/forge.py missions/your-mission.md --max-turns 50      # override turn limit
-./scripts/forge.py missions/your-mission.md --resume sessions/your-mission-20260322-001929
+./scripts/forge.py missions/your-mission --dry-run          # validate without calling Claude
+./scripts/forge.py missions/your-mission --model opus        # override model
+./scripts/forge.py missions/your-mission --max-turns 50      # override turn limit
+./scripts/forge.py missions/your-mission --resume sessions/your-mission-20260322-001929
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -126,10 +126,18 @@ next and when to declare consensus. Each file has two sections:
 
 ### `missions/` -- Mission Definitions
 
-A mission file specifies the question, which agents participate, and
-session parameters.
+Each mission is a directory containing a `MISSION.md` file and optional
+reference materials.
 
-**Format**: `missions/{slug}.md`
+**Structure**: `missions/{slug}/`
+
+```
+missions/gold-price-outlook/
+  MISSION.md              # Mission definition (required)
+  references/             # Supporting documents (optional)
+```
+
+**MISSION.md format**:
 
 ```yaml
 ---
@@ -152,11 +160,11 @@ Question body, key factors to evaluate, and deliverable specification.
 Each run creates a timestamped directory:
 
 ```
-sessions/{topic-slug}-{timestamp}/
+sessions/{mission-slug}-{timestamp}/
   transcript.md          Full discussion, all turns
   synthesis.md           Synthesized reference document (primary deliverable)
   closing.md             Orchestrator's closing summary with statistics
-  topic.md               Copy of the topic file used
+  mission.md             Copy of the MISSION.md used
   state.json             Turn counter, speaker history, status
   orchestrator.log       Orchestrator reasoning per speaker pick
   utterances/            Individual turn files (timestamped)
@@ -170,9 +178,16 @@ searches. Other agents can read each other's notes to avoid redundant work.
 
 ### `scripts/` -- Orchestration
 
-`forge.py` is the main orchestrator. It parses the topic file, loads
+`forge.py` is the main orchestrator. It parses the mission, loads
 roles, runs the discussion loop, and produces the session output. It is
 stdlib-only Python with no external dependencies.
+
+It accepts a mission directory or a direct path to MISSION.md:
+
+```bash
+./scripts/forge.py missions/gold-price-outlook           # directory
+./scripts/forge.py missions/gold-price-outlook/MISSION.md # also works
+```
 
 ### `.claude/skills/` -- Agent Skills
 
