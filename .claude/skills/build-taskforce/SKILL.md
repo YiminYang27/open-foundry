@@ -127,22 +127,24 @@ Ask the user: "Does this taskforce look right? Any agents to add or remove?"
 
 Only proceed after the user confirms.
 
-### Step 6 -- Generate Mission File
+### Step 6 -- Generate Mission
 
 Read `references/mission-format.md` for the exact format spec.
 
-Generate the mission file with:
+Create the mission directory and files:
 
-1. **Frontmatter**: agents, orchestrator, max_turns, model
-2. **Title**: specific question or thesis as `# heading`
-3. **Framing paragraph**: 1-3 sentences establishing scope and purpose
-4. **Key factors**: structured `##`/`###` subsections organized by domain,
-   each containing 3-5 specific evaluation points or questions
-5. **Source references** (if applicable): file paths or data sources
-6. **Deliverable**: numbered list of concrete output items the session
-   should produce
-
-Write to `missions/{slug}.md` where slug is derived from the title.
+1. Create `missions/{slug}/` directory
+2. Create `missions/{slug}/MISSION.md` with:
+   - **Frontmatter**: agents, orchestrator, max_turns, model
+   - **Title**: specific question or thesis as `# heading`
+   - **Framing paragraph**: 1-3 sentences establishing scope and purpose
+   - **Key factors**: structured `##`/`###` subsections organized by domain,
+     each containing 3-5 specific evaluation points or questions
+   - **Source references** (if applicable): file paths or data sources
+   - **Deliverable**: numbered list of concrete output items the session
+     should produce
+3. Create `missions/{slug}/references/` directory
+4. If the user provided reference materials, place them in `references/`
 
 ### Step 7 -- Validate
 
@@ -157,10 +159,10 @@ Write to `missions/{slug}.md` where slug is derived from the title.
 
 Show the user:
 
-1. **File path**: where the topic was written
+1. **File path**: where the mission was created
 2. **Panel summary**: final agent composition with role descriptions
 3. **Run command**:
    ```bash
-   ./scripts/forge.py missions/{slug}.md
+   ./scripts/forge.py {slug}
    ```
 4. **Estimated session**: approximate turns and factor-to-agent coverage
