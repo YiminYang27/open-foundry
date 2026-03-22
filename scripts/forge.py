@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-forum.py -- Multi-agent discussion orchestrator
+forge.py -- Multi-agent discussion orchestrator
 
 Runs a structured discussion between LLM agents with distinct
 perspectives, moderated by an orchestrator that picks speakers
@@ -8,7 +8,7 @@ and detects consensus. All discussion is recorded to a readable
 transcript.
 
 Usage:
-  ./scripts/forum.py <topic-file> [OPTIONS]
+  ./scripts/forge.py <topic-file> [OPTIONS]
 
 Arguments:
   <topic-file>   Path to a .md file with YAML frontmatter (agents, max_turns, model)
@@ -21,9 +21,9 @@ Options:
   --help          Show this help message
 
 Examples:
-  ./scripts/forum.py topics/gold-price-outlook.md
-  ./scripts/forum.py topics/gold-price-outlook.md --max-turns 50 --model opus
-  ./scripts/forum.py topics/gold-price-outlook.md --resume sessions/gold-price-outlook-20260322-001929
+  ./scripts/forge.py topics/gold-price-outlook.md
+  ./scripts/forge.py topics/gold-price-outlook.md --max-turns 50 --model opus
+  ./scripts/forge.py topics/gold-price-outlook.md --resume sessions/gold-price-outlook-20260322-001929
 """
 
 import argparse
@@ -698,7 +698,7 @@ def main() -> None:
         print()
         warn(f"Interrupted at turn {session.utterances}")
         _update_state("interrupted")
-        info(f"Resume with: ./scripts/forum.py {args.topic_file} --resume {work_dir}")
+        info(f"Resume with: ./scripts/forge.py {args.topic_file} --resume {work_dir}")
         sys.exit(130)
 
     signal.signal(signal.SIGINT, on_interrupt)

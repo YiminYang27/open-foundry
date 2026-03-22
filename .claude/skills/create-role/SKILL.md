@@ -6,7 +6,7 @@ description: Create a new forum discussion role for the multi-agent discussion s
 # Create Role
 
 You are helping the user create a new role for the multi-agent discussion system.
-Role files define agent personas used in `forum.sh` discussions. A good role
+Role files define agent personas used in `forge.py` discussions. A good role
 needs a clear differentiator, decision criteria, negative space, and grounding
 tendency -- without these, the agent drifts or overlaps with existing roles.
 

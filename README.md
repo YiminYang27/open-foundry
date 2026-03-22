@@ -21,13 +21,13 @@ cd open-foundry
 
 # Create a topic file (or use the /build-taskforce skill in Claude Code)
 # Then run:
-./scripts/forum.py topics/your-topic.md
+./scripts/forge.py topics/your-topic.md
 
 # Options:
-./scripts/forum.py topics/your-topic.md --dry-run          # validate without calling Claude
-./scripts/forum.py topics/your-topic.md --model opus        # override model
-./scripts/forum.py topics/your-topic.md --max-turns 50      # override turn limit
-./scripts/forum.py topics/your-topic.md --resume sessions/your-topic-20260322-001929
+./scripts/forge.py topics/your-topic.md --dry-run          # validate without calling Claude
+./scripts/forge.py topics/your-topic.md --model opus        # override model
+./scripts/forge.py topics/your-topic.md --max-turns 50      # override turn limit
+./scripts/forge.py topics/your-topic.md --resume sessions/your-topic-20260322-001929
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -170,7 +170,7 @@ searches. Other agents can read each other's notes to avoid redundant work.
 
 ### `scripts/` -- Orchestration
 
-`forum.py` is the main orchestrator. It parses the topic file, loads
+`forge.py` is the main orchestrator. It parses the topic file, loads
 roles, runs the discussion loop, and produces the session output. It is
 stdlib-only Python with no external dependencies.
 

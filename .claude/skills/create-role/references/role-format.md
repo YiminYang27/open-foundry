@@ -116,4 +116,4 @@ The LLM will fill gaps with generic behavior.
 ### Prescriptive Output Format
 Do not bake specific output formats into the persona (e.g., "always respond with
 a numbered list"). The persona defines perspective and judgment, not response
-format -- that is controlled by the agent prompt in forum.sh.
+format -- that is controlled by the agent prompt in forge.py.
