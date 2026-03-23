@@ -58,6 +58,10 @@ File paths to source code, reference documents, or files in the mission's
 `references/` directory. Agents have file access via
 `--dangerously-skip-permissions` and can read these directly.
 
+`forge.py` automatically detects a non-empty `references/` directory and adds
+a `REFERENCE MATERIALS` block to every agent prompt, pointing them to its
+path. There is no need to copy reference files into the session directory.
+
 ### 5. Deliverable (required)
 
 Explicit description of what the discussion should produce. This shapes the

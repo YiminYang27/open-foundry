@@ -338,9 +338,20 @@ def _extract_json(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def agent_speak(session: Session, agent: Agent, topic_body: str,
-                max_turns: int, model: str, dry_run: bool) -> str:
+                max_turns: int, model: str, dry_run: bool,
+                mission_dir: Path | None = None) -> str:
 
     transcript_ctx = get_transcript_context(session.transcript, session.utterances)
+
+    refs_block = ""
+    if mission_dir:
+        refs_dir = mission_dir / "references"
+        if refs_dir.is_dir() and any(refs_dir.iterdir()):
+            refs_block = (
+                f"\nREFERENCE MATERIALS: {refs_dir}/\n"
+                f"Read files in this directory for background data provided\n"
+                f"by the mission author. Cite them when relevant.\n"
+            )
 
     prompt = f"""You are "{agent.name}" in a structured forum discussion.
 
@@ -349,7 +360,7 @@ YOUR ROLE AND PERSPECTIVE:
 
 DISCUSSION TOPIC:
 {topic_body}
-
+{refs_block}
 TRANSCRIPT SO FAR:
 {transcript_ctx}
 
@@ -643,7 +654,14 @@ def main() -> None:
         sessions_dir = project_root / "sessions"
         work_dir = sessions_dir / f"{slug}-{timestamp}"
         work_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(topic_path, work_dir / "mission.md")
+        # Store a pointer to the mission source instead of copying.
+        # Missions may contain a references/ directory with large files;
+        # duplicating them into every session would waste space.
+        (work_dir / "MISSION.md").write_text(
+            f"<!-- source: {topic_path} -->\n"
+            + topic_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
 
     transcript = work_dir / "transcript.md"
     state_file = work_dir / "state.json"
@@ -682,6 +700,7 @@ def main() -> None:
             "speakers_history": speakers_history,
             "agents": [a.name for a in agents],
             "model": model,
+            "mission_source": str(topic_path),
         }
         session.state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
@@ -790,7 +809,8 @@ def main() -> None:
         agent = next((a for a in agents if a.name == speaker), agents[0])
 
         # Agent speaks
-        response = agent_speak(session, agent, topic_body, max_turns, model, args.dry_run)
+        response = agent_speak(session, agent, topic_body, max_turns, model, args.dry_run,
+                                mission_dir=topic_path.parent)
         if not response:
             response = "[agent declined]"
 

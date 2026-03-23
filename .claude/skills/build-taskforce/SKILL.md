@@ -144,7 +144,10 @@ Create the mission directory and files:
    - **Deliverable**: numbered list of concrete output items the session
      should produce
 3. Create `missions/{slug}/references/` directory
-4. If the user provided reference materials, place them in `references/`
+4. If the user provided reference materials (documents, data files, prior
+   analyses), place them in `references/`. `forge.py` automatically tells
+   agents about this directory when it is non-empty -- no extra configuration
+   needed.
 
 ### Step 7 -- Validate
 
