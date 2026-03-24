@@ -21,21 +21,28 @@ Options:
   --dry-run           Print prompts without calling Claude
   --help              Show this help message
 
+Intervention controls (during a running discussion):
+  Ctrl+\\              Pause after current turn completes
+  touch PAUSE         Pause from another terminal window
+
 Examples:
   ./scripts/forge.py gold-price-outlook
   ./scripts/forge.py gold-price-outlook --max-turns 50 --model opus
   ./scripts/forge.py gold-price-outlook --resume gold-price-outlook-20260322-001929
   ./scripts/forge.py gold-price-outlook --resume gold-price-outlook-20260322-001929 --synthesize-only
+  ./scripts/forge.py gold-price-outlook --model opus
 """
 
 import argparse
 import collections
 import json
+import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
+import termios
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -58,6 +65,7 @@ else:
 
 
 _session_log: Path | None = None
+_pause_requested = False
 
 def _log_to_file(plain_msg: str) -> None:
     if _session_log is not None:
@@ -104,10 +112,13 @@ class Session:
     last_speaker: str = ""
     consecutive_count: int = 0
     speakers_history: list[str] | None = None
+    interventions: list[dict] | None = None
 
     def __post_init__(self):
         if self.speakers_history is None:
             self.speakers_history = []
+        if self.interventions is None:
+            self.interventions = []
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +236,11 @@ def call_claude(prompt: str, model: str, skip_perms: bool = False,
 
     for attempt in range(max_retries):
         try:
+            # start_new_session isolates child from parent's process group
+            # so Ctrl+\ (SIGQUIT) only reaches forge.py, not the claude subprocess.
             result = subprocess.run(cmd, input=prompt, capture_output=True,
-                                    text=True, timeout=timeout)
+                                    text=True, timeout=timeout,
+                                    start_new_session=True)
         except subprocess.TimeoutExpired:
             warn(f"{label} timed out after {timeout}s (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
@@ -611,7 +625,7 @@ ASCII only."""
                 ['claude', '-p', '-', '--model', model,
                  '--dangerously-skip-permissions'],
                 input=synth_prompt, capture_output=False, text=True,
-                timeout=synth_timeout
+                timeout=synth_timeout, start_new_session=True
             )
             if result.returncode == 0:
                 break
@@ -642,6 +656,66 @@ def next_round_robin(agents: list[Agent], last_speaker: str) -> str:
         if a.name == last_speaker:
             return agents[(i + 1) % len(agents)].name
     return agents[0].name
+
+
+# ---------------------------------------------------------------------------
+# Intervention (human-in-the-loop)
+# ---------------------------------------------------------------------------
+
+def _on_pause_signal(*_):
+    global _pause_requested
+    _pause_requested = True
+    print()
+    info("Pause requested -- waiting for current turn to finish...")
+
+
+def _check_pause(session: Session) -> bool:
+    """Return True if a pause has been requested via signal or PAUSE file."""
+    global _pause_requested
+    if _pause_requested:
+        _pause_requested = False
+        return True
+    pause_file = session.work_dir / "PAUSE"
+    if pause_file.exists():
+        pause_file.unlink()
+        info("PAUSE file detected")
+        return True
+    return False
+
+
+def _inject_operator_turn(session: Session, msg: str) -> None:
+    """Inject an operator message as a turn in the transcript."""
+    turn_num = session.utterances + 1
+    turn_time = datetime.now().strftime("%H:%M")
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    (session.utterances_dir / f"{ts}-operator.md").write_text(
+        f"# [operator] -- Turn {turn_num}\n\n{msg}\n",
+        encoding="utf-8",
+    )
+
+    with session.transcript.open("a", encoding="utf-8") as f:
+        f.write(f"### Turn {turn_num} -- [operator] [{turn_time}]\n"
+                f"{msg}\n\n---\n\n")
+
+    # Persist as a note so it survives transcript windowing
+    op_notes = session.notes_dir / "_operator"
+    op_notes.mkdir(parents=True, exist_ok=True)
+    (op_notes / f"intervention-turn-{turn_num}.md").write_text(
+        f"# Operator intervention (turn {turn_num})\n\n{msg}\n",
+        encoding="utf-8",
+    )
+
+    session.utterances += 1
+    session.last_speaker = "[operator]"
+    session.speakers_history.append("[operator]")
+    session.interventions.append({
+        "turn": turn_num,
+        "type": "inject",
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    })
+
+    ok(f"Intervention injected as turn {turn_num}")
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +847,13 @@ def main() -> None:
     utterances_dir.mkdir(exist_ok=True)
     for a in agents:
         (notes_dir / a.name).mkdir(parents=True, exist_ok=True)
+    (notes_dir / "_operator").mkdir(parents=True, exist_ok=True)
+
+    # Clean up leftover PAUSE file from previous session
+    pause_sentinel = work_dir / "PAUSE"
+    if pause_sentinel.exists():
+        pause_sentinel.unlink()
+        warn("Removed leftover PAUSE file from previous session")
 
     session = Session(
         work_dir=work_dir,
@@ -794,6 +875,7 @@ def main() -> None:
             "agents": [a.name for a in agents],
             "model": model,
             "mission_source": str(topic_path),
+            "interventions": session.interventions,
         }
         session.state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
@@ -825,6 +907,7 @@ def main() -> None:
                 warn("Re-entering discussion loop will add turns beyond "
                      "original completion. Use --synthesize-only to re-run "
                      "synthesis only.")
+        session.interventions = state.get("interventions", [])
         info(f"Resuming at turn {session.utterances + 1}, last speaker: {session.last_speaker}")
     else:
         session.utterances = 0
@@ -855,6 +938,10 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, on_interrupt)
     signal.signal(signal.SIGTERM, on_interrupt)
+    if hasattr(signal, 'SIGQUIT'):
+        signal.signal(signal.SIGQUIT, _on_pause_signal)
+    if hasattr(signal, 'SIGUSR1'):
+        signal.signal(signal.SIGUSR1, _on_pause_signal)
 
     # Banner
     print(f"\n{BOLD}=== Forum Discussion ==={NC}\n")
@@ -865,6 +952,8 @@ def main() -> None:
     info(f"Output:    {work_dir}")
     if resume_dir:
         info(f"Resuming from turn {session.utterances + 1}")
+    if sys.stdout.isatty() and not args.dry_run:
+        info(f"Pause:     Ctrl+\\\\ or touch {work_dir}/PAUSE")
     print()
 
     # Synthesize-only mode: skip discussion, run finalize + synthesize
@@ -976,6 +1065,25 @@ def main() -> None:
         _update_state("running")
 
         ok(f"Turn {session.utterances}/{max_turns} complete ({speaker})")
+
+        # Check for pause triggers (Ctrl+\ signal or PAUSE file)
+        if not args.dry_run and _check_pause(session) and sys.stdout.isatty():
+            _update_state("paused")
+            # Flush any keystrokes typed while the agent was running,
+            # so input() waits for fresh, intentional input.
+            try:
+                termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+            except (termios.error, OSError):
+                pass
+            try:
+                print(f"\n{BOLD}--- Paused after turn {session.utterances}/{max_turns} ---{NC}")
+                msg = input("Type message to inject (Enter to resume): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                msg = ""
+            if msg:
+                _inject_operator_turn(session, msg)
+            _update_state("running")
+
         print()
 
     # Max turns reached
