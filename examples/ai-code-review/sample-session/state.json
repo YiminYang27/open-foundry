@@ -1,0 +1,55 @@
+{
+  "utterances": 29,
+  "max_turns": 30,
+  "status": "completed",
+  "last_speaker": "system_architect",
+  "consecutive_count": 1,
+  "speakers_history": [
+    "system_architect",
+    "critical_analyst",
+    "llm_expert",
+    "convention_explorer",
+    "backend_engineer",
+    "database_engineer",
+    "critical_analyst",
+    "[operator]",
+    "llm_expert",
+    "backend_engineer",
+    "system_architect",
+    "critical_analyst",
+    "convention_explorer",
+    "database_engineer",
+    "llm_expert",
+    "system_architect",
+    "critical_analyst",
+    "backend_engineer",
+    "llm_expert",
+    "critical_analyst",
+    "convention_explorer",
+    "database_engineer",
+    "system_architect",
+    "critical_analyst",
+    "backend_engineer",
+    "llm_expert",
+    "database_engineer",
+    "convention_explorer",
+    "system_architect"
+  ],
+  "agents": [
+    "system_architect",
+    "llm_expert",
+    "convention_explorer",
+    "backend_engineer",
+    "database_engineer",
+    "critical_analyst"
+  ],
+  "model": "sonnet",
+  "mission_source": "missions/ai-code-review/MISSION.md",
+  "interventions": [
+    {
+      "turn": 8,
+      "type": "inject",
+      "timestamp": "2026-03-24T20:30:48"
+    }
+  ]
+}

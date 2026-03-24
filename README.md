@@ -62,6 +62,15 @@ know what to ask, and you want a fast answer or need to write code.
 want multiple perspectives to challenge each other autonomously, and you
 need to inspect (or show others) how the conclusion was reached.
 
+## See It in Action
+
+Browse a real session output without cloning anything:
+
+- [**Transcript**](examples/ai-code-review/sample-session/transcript.md) -- 29-turn debate across 6 agents, with a human intervention at turn 8
+- [**Synthesis**](examples/ai-code-review/sample-session/synthesis.md) -- the final deliverable: task breakdown, workflow, failure modes
+- [**Orchestrator log**](examples/ai-code-review/sample-session/orchestrator.log) -- why each speaker was chosen
+- [**Agent notes**](examples/ai-code-review/sample-session/notes/) -- each agent's working notes across turns
+
 ## Quick Start
 
 ### Prerequisites
@@ -76,8 +85,10 @@ need to inspect (or show others) how the conclusion was reached.
 git clone https://github.com/YiminYang27/open-foundry.git
 cd open-foundry
 
-# Create a mission (or use the /build-taskforce skill in Claude Code)
-# Then run:
+# Try the example mission:
+./scripts/forge.py ai-code-review
+
+# Or create your own (use /build-taskforce skill in Claude Code)
 ./scripts/forge.py your-mission
 
 # Options:
@@ -179,8 +190,9 @@ The markdown body after the frontmatter is the persona -- it must include:
 `synthesizer` (post-discussion synthesis -- auto-triggered, do not list
 in topics)
 
-**software/**: `system_architect`, `api_explorer`, `convention_explorer`,
-`example_explorer`, `llm_expert`
+**software/**: `system_architect`, `backend_engineer`, `database_engineer`,
+`api_explorer`, `convention_explorer`, `example_explorer`, `llm_expert`,
+`frontend_engineer`
 
 **finance/**: `macro_economist`, `geopolitical_analyst`, `gold_analyst`,
 `sellside_strategist`, `quant_engineer`, `technical_analyst`, `risk_modeler`
