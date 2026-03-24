@@ -14,16 +14,18 @@ Arguments:
   <mission>   Path to a mission directory or MISSION.md file
 
 Options:
-  --max-turns N   Override max utterances (default: from mission file or 20)
-  --model MODEL   Override model for all claude -p calls
-  --resume DIR    Resume from a previous run directory
-  --dry-run       Print prompts without calling Claude
-  --help          Show this help message
+  --max-turns N       Override max utterances (default: from mission file or 20)
+  --model MODEL       Override model for all claude -p calls
+  --resume DIR        Resume from a previous run directory
+  --synthesize-only   Skip discussion, run finalize + synthesize (requires --resume)
+  --dry-run           Print prompts without calling Claude
+  --help              Show this help message
 
 Examples:
   ./scripts/forge.py gold-price-outlook
   ./scripts/forge.py gold-price-outlook --max-turns 50 --model opus
   ./scripts/forge.py gold-price-outlook --resume gold-price-outlook-20260322-001929
+  ./scripts/forge.py gold-price-outlook --resume gold-price-outlook-20260322-001929 --synthesize-only
 """
 
 import argparse
@@ -55,14 +57,21 @@ else:
     RED = GREEN = YELLOW = BLUE = CYAN = BOLD = NC = ''
 
 
-def info(msg):  print(f"{BLUE}[INFO]{NC} {msg}")
-def ok(msg):    print(f"{GREEN}[OK]{NC} {msg}")
-def warn(msg):  print(f"{YELLOW}[WARN]{NC} {msg}")
-def err(msg):   print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr)
+_session_log: Path | None = None
+
+def _log_to_file(plain_msg: str) -> None:
+    if _session_log is not None:
+        with open(_session_log, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().strftime('%H:%M:%S')} {plain_msg}\n")
+
+def info(msg):  print(f"{BLUE}[INFO]{NC} {msg}"); _log_to_file(f"[INFO] {msg}")
+def ok(msg):    print(f"{GREEN}[OK]{NC} {msg}"); _log_to_file(f"[OK] {msg}")
+def warn(msg):  print(f"{YELLOW}[WARN]{NC} {msg}"); _log_to_file(f"[WARN] {msg}")
+def err(msg):   print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr); _log_to_file(f"[ERROR] {msg}")
 def fatal(msg): err(msg); sys.exit(1)
 
 def speaker_line(name, text):
-    print(f"{CYAN}[{name}]{NC} {text}")
+    print(f"{CYAN}[{name}]{NC} {text}"); _log_to_file(f"[{name}] {text}")
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +103,11 @@ class Session:
     utterances: int = 0
     last_speaker: str = ""
     consecutive_count: int = 0
+    speakers_history: list[str] | None = None
+
+    def __post_init__(self):
+        if self.speakers_history is None:
+            self.speakers_history = []
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +211,9 @@ def load_orchestrator(roles_dir: Path, name: str) -> Orchestrator:
 
 def call_claude(prompt: str, model: str, skip_perms: bool = False,
                 dry_run: bool = False, label: str = "",
-                timeout: int = 300) -> str:
+                timeout: int = 600, max_retries: int = 3) -> str:
+    # timeout=600: agents with WebSearch/file access need up to 10 min.
+    # Orchestrator calls should override with timeout=120.
     if dry_run:
         info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
         return ""
@@ -207,20 +223,22 @@ def call_claude(prompt: str, model: str, skip_perms: bool = False,
     if skip_perms:
         cmd.append('--dangerously-skip-permissions')
 
-    for attempt in range(2):
+    for attempt in range(max_retries):
         try:
             result = subprocess.run(cmd, input=prompt, capture_output=True,
                                     text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
-            warn(f"{label} timed out after {timeout}s")
-            if attempt == 0:
+            warn(f"{label} timed out after {timeout}s (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
                 time.sleep(2)
             continue
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-        if attempt == 0:
-            warn(f"{label} call failed, retrying...")
+        if attempt < max_retries - 1:
+            warn(f"{label} call failed (exit {result.returncode}), retrying... (attempt {attempt + 1}/{max_retries})")
             time.sleep(2)
+        else:
+            warn(f"{label} call failed after {max_retries} attempts (exit {result.returncode})")
 
     return ""
 
@@ -251,6 +269,53 @@ def get_transcript_context(transcript: Path, utterances: int,
     return f"{header}\n\n[Turns 1-{omitted} omitted -- key findings are in notes/ folders]\n\n{''.join(recent)}"
 
 
+def truncate_transcript_for_closing(transcript: Path,
+                                     keep_recent: int = 15) -> str:
+    """Truncate transcript for closing summary, keeping structure and final positions.
+
+    Keeps: full header, each agent's last utterance, last N turns in full.
+    keep_recent default 15: covers ~2 full rounds for a typical 6-8 agent panel,
+    ensuring the closing summary sees the convergence phase. Callers can override
+    for smaller/larger panels.
+    """
+    content = transcript.read_text(encoding="utf-8")
+
+    header_match = re.search(r'^## Discussion\s*$', content, re.MULTILINE)
+    if not header_match:
+        return content
+    header = content[:header_match.end()]
+
+    turn_blocks = re.split(r'(?=^### Turn )', content[header_match.end():],
+                           flags=re.MULTILINE)
+    turn_blocks = [t for t in turn_blocks if t.startswith("### Turn ")]
+
+    if len(turn_blocks) <= keep_recent:
+        return content
+
+    # Find each agent's last turn
+    agent_last: dict[str, int] = {}
+    for i, block in enumerate(turn_blocks):
+        m = re.match(r'### Turn \d+ -- (\S+)', block)
+        if m:
+            agent_last[m.group(1)] = i
+
+    recent_start = len(turn_blocks) - keep_recent
+    keep_indices = set(range(recent_start, len(turn_blocks)))
+    for idx in agent_last.values():
+        keep_indices.add(idx)
+
+    parts = [header, "\n\n"]
+    omitted = len(turn_blocks) - len(keep_indices)
+    if omitted > 0:
+        parts.append(f"[{omitted} earlier turns omitted -- agent notes contain full details]\n\n")
+
+    for i, block in enumerate(turn_blocks):
+        if i in keep_indices:
+            parts.append(block)
+
+    return "".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # State management
 # ---------------------------------------------------------------------------
@@ -265,9 +330,11 @@ def load_state(state_file: Path) -> dict:
 
 def orchestrator_pick(session: Session, agents: list[Agent], orch: Orchestrator,
                       agent_list_str: str, max_turns: int, model: str,
-                      dry_run: bool) -> tuple[str, str]:
+                      dry_run: bool,
+                      recent_turns: int = 10) -> tuple[str, str]:
 
-    transcript_ctx = get_transcript_context(session.transcript, session.utterances)
+    transcript_ctx = get_transcript_context(session.transcript, session.utterances,
+                                            recent_turns=recent_turns)
 
     prompt = f"""You are the orchestrator of a structured forum discussion.
 
@@ -279,7 +346,7 @@ YOUR ORCHESTRATION STRATEGY:
 - Turn {session.utterances + 1} of {max_turns}
 - Agent notes are at: {session.notes_dir}/ -- read them to understand earlier context
 
-TRANSCRIPT (recent 7 turns):
+TRANSCRIPT (recent {recent_turns} turns):
 {transcript_ctx}
 
 Output ONLY JSON (no markdown fences, no explanation):
@@ -291,7 +358,8 @@ or
         info(f"[DRY RUN] Orchestrator prompt ({len(prompt)} chars)")
         return agents[0].name, "dry run"
 
-    raw = call_claude(prompt, model, skip_perms=True, label="Orchestrator")
+    raw = call_claude(prompt, model, skip_perms=True, label="Orchestrator",
+                      timeout=120)
     if not raw:
         warn("Orchestrator returned empty response")
         return "FALLBACK", "orchestrator failed"
@@ -339,9 +407,11 @@ def _extract_json(text: str) -> dict:
 
 def agent_speak(session: Session, agent: Agent, topic_body: str,
                 max_turns: int, model: str, dry_run: bool,
-                mission_dir: Path | None = None) -> str:
+                mission_dir: Path | None = None,
+                recent_turns: int = 10) -> str:
 
-    transcript_ctx = get_transcript_context(session.transcript, session.utterances)
+    transcript_ctx = get_transcript_context(session.transcript, session.utterances,
+                                            recent_turns=recent_turns)
 
     refs_block = ""
     if mission_dir:
@@ -427,12 +497,16 @@ def finalize(session: Session, orch: Orchestrator, model: str,
     breakdown = "\n".join(f"- {name}: {count} turns"
                           for name, count in sorted(counts.items()))
 
+    # Use truncated transcript for the prompt to avoid exceeding context window.
+    # Full transcript is still used above for speaker counting (cheap string scan).
+    truncated = truncate_transcript_for_closing(session.transcript)
+
     summary_prompt = f"""You are the orchestrator closing a structured forum discussion.
 
 {orch.close_persona}
 
-FULL TRANSCRIPT:
-{transcript_content}"""
+TRANSCRIPT (truncated -- agent notes contain full details):
+{truncated}"""
 
     if dry_run:
         summary = "[dry run closing summary]"
@@ -523,14 +597,32 @@ ASCII only."""
     # NOTE: Does not use call_claude -- synthesizer writes synthesis.md
     # directly via file tools. capture_output=False lets user see progress.
     # Uses stdin to avoid OS ARG_MAX limit on long prompts.
-    try:
-        subprocess.run(
-            ['claude', '-p', '-', '--model', model,
-             '--dangerously-skip-permissions'],
-            input=synth_prompt, capture_output=False, text=True, timeout=600
-        )
-    except subprocess.TimeoutExpired:
-        warn("Synthesizer timed out after 600s")
+    synth_timeout = 1800
+    synth_retries = 3
+    info(f"Synthesizer timeout: {synth_timeout}s x {synth_retries} retries")
+    for attempt in range(synth_retries):
+        # Clear partial synthesis from previous failed attempt
+        if attempt > 0 and synthesis_file.exists():
+            backup = synthesis_file.with_suffix(f".attempt{attempt}.md")
+            synthesis_file.rename(backup)
+            info(f"Moved partial synthesis to {backup.name}")
+        try:
+            result = subprocess.run(
+                ['claude', '-p', '-', '--model', model,
+                 '--dangerously-skip-permissions'],
+                input=synth_prompt, capture_output=False, text=True,
+                timeout=synth_timeout
+            )
+            if result.returncode == 0:
+                break
+            warn(f"Synthesizer exited with code {result.returncode} "
+                 f"(attempt {attempt + 1}/{synth_retries})")
+        except subprocess.TimeoutExpired:
+            warn(f"Synthesizer timed out after {synth_timeout}s "
+                 f"(attempt {attempt + 1}/{synth_retries})")
+        if attempt < synth_retries - 1:
+            info(f"Retrying synthesizer (attempt {attempt + 2}/{synth_retries})...")
+            time.sleep(5)
 
     if synthesis_file.exists():
         lines = len(synthesis_file.read_text(encoding="utf-8").splitlines())
@@ -570,9 +662,14 @@ def main() -> None:
                         help="Override model (opus/sonnet/haiku)")
     parser.add_argument("--resume", default=None, metavar="SESSION",
                         help="Resume session (slug-timestamp, e.g. gold-price-outlook-20260322-001929)")
+    parser.add_argument("--synthesize-only", action="store_true",
+                        help="Skip discussion, run finalize + synthesize (requires --resume)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print prompts without calling Claude")
     args = parser.parse_args()
+
+    if args.synthesize_only and not args.resume:
+        fatal("--synthesize-only requires --resume to specify the session")
 
     # Resolve paths
     script_dir = Path(__file__).resolve().parent
@@ -669,6 +766,10 @@ def main() -> None:
     utterances_dir = work_dir / "utterances"
     notes_dir = work_dir / "notes"
 
+    # Enable session-level runtime log (captures all info/warn/ok/err/speaker output)
+    global _session_log
+    _session_log = work_dir / "runtime.log"
+
     utterances_dir.mkdir(exist_ok=True)
     for a in agents:
         (notes_dir / a.name).mkdir(parents=True, exist_ok=True)
@@ -683,21 +784,13 @@ def main() -> None:
     )
 
     def _update_state(status: str) -> None:
-        # Assumes snake_case agent names -- no spaces
-        speakers_history = []
-        if session.transcript.exists():
-            for line in session.transcript.read_text(encoding="utf-8").splitlines():
-                if line.startswith("### Turn "):
-                    parts = line.split(" -- ")
-                    if len(parts) >= 2:
-                        speakers_history.append(parts[1].split()[0].strip())
         state = {
             "utterances": session.utterances,
             "max_turns": max_turns,
             "status": status,
             "last_speaker": session.last_speaker,
             "consecutive_count": session.consecutive_count,
-            "speakers_history": speakers_history,
+            "speakers_history": session.speakers_history,
             "agents": [a.name for a in agents],
             "model": model,
             "mission_source": str(topic_path),
@@ -710,6 +803,28 @@ def main() -> None:
         session.utterances = state.get("utterances", 0)
         session.last_speaker = state.get("last_speaker", "")
         session.consecutive_count = state.get("consecutive_count", 0)
+        session.speakers_history = state.get("speakers_history", [])
+        # Backward compat: rebuild from transcript for old state files.
+        # Triggers when speakers_history is empty ([] is falsy) or missing
+        # from state.json (state.get returns []).
+        if not session.speakers_history and session.utterances > 0 and session.transcript.exists():
+            for line in session.transcript.read_text(encoding="utf-8").splitlines():
+                if line.startswith("### Turn "):
+                    parts = line.split(" -- ")
+                    if len(parts) >= 2:
+                        session.speakers_history.append(parts[1].split()[0].strip())
+        # Warn if session already completed
+        if state.get("status") == "completed":
+            synthesis_exists = (work_dir / "synthesis.md").exists()
+            if not synthesis_exists:
+                warn("Session already completed but synthesis.md is missing.")
+                warn(f"Consider: ./scripts/forge.py {args.topic_file} "
+                     f"--resume {args.resume} --synthesize-only")
+            else:
+                warn("Session already completed (synthesis.md exists).")
+                warn("Re-entering discussion loop will add turns beyond "
+                     "original completion. Use --synthesize-only to re-run "
+                     "synthesis only.")
         info(f"Resuming at turn {session.utterances + 1}, last speaker: {session.last_speaker}")
     else:
         session.utterances = 0
@@ -752,14 +867,40 @@ def main() -> None:
         info(f"Resuming from turn {session.utterances + 1}")
     print()
 
+    # Synthesize-only mode: skip discussion, run finalize + synthesize
+    if args.synthesize_only:
+        if not state_file.exists():
+            fatal(f"No state.json found in {work_dir} -- cannot run synthesize-only")
+        info(f"Synthesize-only mode: skipping discussion loop")
+        info(f"Session has {session.utterances} turns")
+
+        closing_file = work_dir / "closing.md"
+        if closing_file.exists():
+            info("closing.md exists, re-running synthesis only")
+        else:
+            info("closing.md missing, running finalize + synthesis")
+            finalize(session, orch, model, "unknown (synthesize-only mode)", args.dry_run)
+
+        synthesize(session, roles_dir, topic_body, model, args.dry_run)
+
+        synthesis = work_dir / "synthesis.md"
+        if synthesis.exists():
+            _update_state("completed")
+            ok(f"Synthesis written to {synthesis}")
+        else:
+            warn("Synthesis was not produced")
+        return
+
     # Main loop
     agent_names_set = {a.name for a in agents}
+    recent_window = max(len(agents) + 2, 10)
 
     while session.utterances < max_turns:
         print(f"{BOLD}--- Orchestrator picking speaker (turn {session.utterances + 1}/{max_turns}) ---{NC}")
 
         speaker, reasoning = orchestrator_pick(
-            session, agents, orch, agent_list_str, max_turns, model, args.dry_run
+            session, agents, orch, agent_list_str, max_turns, model, args.dry_run,
+            recent_turns=recent_window
         )
 
         # Save orchestrator utterance
@@ -810,7 +951,8 @@ def main() -> None:
 
         # Agent speaks
         response = agent_speak(session, agent, topic_body, max_turns, model, args.dry_run,
-                                mission_dir=topic_path.parent)
+                                mission_dir=topic_path.parent,
+                                recent_turns=recent_window)
         if not response:
             response = "[agent declined]"
 
@@ -830,6 +972,7 @@ def main() -> None:
 
         session.utterances += 1
         session.last_speaker = speaker
+        session.speakers_history.append(speaker)
         _update_state("running")
 
         ok(f"Turn {session.utterances}/{max_turns} complete ({speaker})")
