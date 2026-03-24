@@ -17,24 +17,25 @@ agent is a stateless `claude -p` call, so all thinking must be
 externalized into files that you can read, search, and audit:
 
 ```
-sessions/gold-price-outlook-20260324/
-  transcript.md        865 lines -- every turn attributed and timestamped
-  orchestrator.log     52 entries -- why each speaker was chosen
+examples/ai-code-review/sample-session/
+  transcript.md        29-turn debate across 6 agents, with human intervention
+  synthesis.md         final deliverable: task breakdown, workflow, failure modes
+  orchestrator.log     29 entries -- why each speaker was chosen
   notes/
-    macro_economist/   8 working notes across 7 turns of evolving analysis
-    critical_analyst/  challenges, counter-examples, gap inventories
-    risk_modeler/      probability trees rebuilt 3 times as inputs changed
-    ...
-  utterances/          100+ individual turn files
+    system_architect/  working notes on structural analysis
+    _operator/         human intervention record
   state.json           full speaker history and session metadata
 ```
 
 You can trace exactly how a conclusion was built, torn apart, and
-rebuilt. When the `gold_analyst` claimed central bank buying proved
-strong demand, the `critical_analyst` identified circular reasoning --
-gold prices rising mechanically inflates the dollar-value metric. That
-challenge is in the transcript, attributable to a specific agent at a
-specific turn. In a single Claude session, that self-correction rarely
+rebuilt. In the [sample session](examples/ai-code-review/sample-session/transcript.md),
+the `system_architect` argued AI review fails at implicit module
+boundaries. The `critical_analyst` challenged this -- human reviewers
+often lack that context too. The `llm_expert` then reframed the real
+risk: AI review creates false confidence by producing authoritative-
+sounding comments on dimensions it cannot reliably check. Each challenge
+is in the transcript, attributable to a specific agent at a specific
+turn. In a single Claude session, that iterative self-correction rarely
 happens because one model tends to maintain internal consistency with
 its own prior output.
 
@@ -156,6 +157,7 @@ open-foundry/
     finance/            Financial analysis roles
     orchestrator/       Orchestration strategies
   missions/             Mission definition files
+  examples/             Example missions with sample session output
   sessions/             Session output (git-ignored)
   scripts/              Orchestration scripts
   .claude/skills/       Agent Skills for Claude Code / Copilot
