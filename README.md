@@ -5,6 +5,63 @@ specialized AI agents, pose a question, and get a rigorously grounded
 output where every claim is challenged, every domain is covered, and
 the reasoning is preserved in a searchable transcript.
 
+## Why open-foundry?
+
+When you ask Claude a complex question, you get an answer -- but you
+cannot see how it got there. The internal reasoning is a black box. If
+the conclusion is wrong, you have no way to trace which assumption
+failed or which perspective was never considered.
+
+Open-foundry makes the reasoning process **fully inspectable**. Every
+agent is a stateless `claude -p` call, so all thinking must be
+externalized into files that you can read, search, and audit:
+
+```
+sessions/gold-price-outlook-20260324/
+  transcript.md        865 lines -- every turn attributed and timestamped
+  orchestrator.log     52 entries -- why each speaker was chosen
+  notes/
+    macro_economist/   8 working notes across 7 turns of evolving analysis
+    critical_analyst/  challenges, counter-examples, gap inventories
+    risk_modeler/      probability trees rebuilt 3 times as inputs changed
+    ...
+  utterances/          100+ individual turn files
+  state.json           full speaker history and session metadata
+```
+
+You can trace exactly how a conclusion was built, torn apart, and
+rebuilt. When the `gold_analyst` claimed central bank buying proved
+strong demand, the `critical_analyst` identified circular reasoning --
+gold prices rising mechanically inflates the dollar-value metric. That
+challenge is in the transcript, attributable to a specific agent at a
+specific turn. In a single Claude session, that self-correction rarely
+happens because one model tends to maintain internal consistency with
+its own prior output.
+
+### How it compares to Claude Code CLI
+
+Each open-foundry agent is a full Claude Code instance -- it has access
+to all native tools (Read, Write, Bash, WebSearch, ...), MCP servers,
+Agent Skills, and plugins. The framework does not limit agent
+capabilities; it adds structure on top of what `claude -p` already
+provides.
+
+| | Claude Code CLI | open-foundry |
+|---|---|---|
+| Interaction model | Synchronous -- human drives every turn | Autonomous -- agents run, human observes |
+| Reasoning visibility | Internal (extended thinking is hidden) | External (transcript, notes, orchestrator log) |
+| Multi-agent relationship | Parent delegates to children, summarizes results | Peers debate each other across multiple rounds |
+| Quality control | Human judges the output | Built-in (evidence gating, thesis testers, negative space) |
+| Intervention | Required every turn | Optional -- Ctrl+\ when you see something worth correcting |
+| Output | An answer | An answer + the full audit trail of how it was reached |
+
+**When to use Claude Code CLI directly**: You are the domain expert, you
+know what to ask, and you want a fast answer or need to write code.
+
+**When to use open-foundry**: The question is complex enough that you
+want multiple perspectives to challenge each other autonomously, and you
+need to inspect (or show others) how the conclusion was reached.
+
 ## Quick Start
 
 ### Prerequisites
@@ -28,6 +85,11 @@ cd open-foundry
 ./scripts/forge.py your-mission --model opus        # override model
 ./scripts/forge.py your-mission --max-turns 50      # override turn limit
 ./scripts/forge.py your-mission --resume your-mission-20260322-001929
+./scripts/forge.py your-mission --resume your-mission-20260322-001929 --synthesize-only
+
+# Intervention controls (during a running discussion):
+#   Ctrl+\          pause after current turn completes
+#   touch PAUSE     pause from another terminal
 ```
 
 The orchestrator script is stdlib-only Python -- no virtualenv or
@@ -38,15 +100,17 @@ The orchestrator script is stdlib-only Python -- no virtualenv or
 ## How It Works
 
 ```
-topic file  -->  orchestrator picks speaker  -->  agent speaks (claude -p)
+mission  -->  orchestrator picks speaker  -->  agent speaks (claude -p)
                       ^                                |
                       |                                v
                       +--- transcript (appended) <-----+
-                                                       |
-                                                       v
-                                                  notes/{agent}/
+                      |                                |
+                      |                                v
+       [operator] ----+                          notes/{agent}/
+       (Ctrl+\ to inject)
 
-... repeat until CONSENSUS or max_turns ...
+... agents run autonomously until CONSENSUS or max_turns ...
+... human observes, intervenes only when needed ...
 
                       |
                       v
@@ -57,6 +121,17 @@ Each agent call is **stateless**: the orchestrator injects recent transcript
 turns, the agent's notes directory, and its role persona into a fresh
 `claude -p` call. No agent carries memory between turns except through its
 own notes folder.
+
+**Human intervention** is pull-based. Agents run without human input by
+default. To intervene mid-discussion:
+
+- **Ctrl+\\** -- pause after the current turn finishes
+- **`touch PAUSE`** -- pause from another terminal
+
+When paused, you can type a message and press Enter to inject it as an
+`[operator]` turn in the transcript. All agents see it in subsequent
+turns, just like any other agent's utterance. Press Enter without typing
+to resume without injection.
 
 ---
 
@@ -232,6 +307,12 @@ and Closing Summary sections to enforce your domain's quality standards.
 
 ## Design Principles
 
+**Reasoning as artifact.** The stateless architecture forces all
+thinking into external files -- transcript, notes, orchestrator log.
+This is not a logging feature; it is a structural consequence. Because
+no agent carries internal state between turns, every inference must be
+written down to persist. The result is a fully auditable reasoning trail.
+
 **Stateless agents, persistent notes.** Each turn is a fresh LLM call.
 Context continuity comes from injecting recent transcript and the
 agent's notes directory. This keeps calls cheap and retryable.
@@ -239,6 +320,11 @@ agent's notes directory. This keeps calls cheap and retryable.
 **Negative space over expertise.** The most important part of a role is
 what it refuses to do. This prevents overlap, forces collaboration, and
 makes the orchestrator's routing decisions meaningful.
+
+**Autonomous by default, intervention by exception.** Agents run without
+human input. The system never prompts, reminds, or asks the human to
+act. If you want to intervene, you pull (Ctrl+\ or PAUSE file); the
+system never pushes.
 
 **Strategy as data.** Speaker rotation rules live in orchestrator files,
 not in code. Different discussions need different moderation: evidence
