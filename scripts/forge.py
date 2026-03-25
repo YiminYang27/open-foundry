@@ -98,6 +98,7 @@ class Orchestrator:
     name: str
     pick_persona: str
     close_persona: str
+    verify_persona: str = ""
 
 
 @dataclass
@@ -205,6 +206,7 @@ def load_orchestrator(roles_dir: Path, name: str) -> Orchestrator:
 
     pick_section = ""
     close_section = ""
+    verify_section = ""
 
     sections = re.split(r'(?=^## )', body, flags=re.MULTILINE)
     for section in sections:
@@ -212,8 +214,11 @@ def load_orchestrator(roles_dir: Path, name: str) -> Orchestrator:
             pick_section = re.sub(r'^## Speaker Selection\s*\n', '', section).strip()
         elif section.startswith("## Closing Summary"):
             close_section = re.sub(r'^## Closing Summary\s*\n', '', section).strip()
+        elif section.startswith("## Verification"):
+            verify_section = re.sub(r'^## Verification\s*\n', '', section).strip()
 
-    return Orchestrator(name=name, pick_persona=pick_section, close_persona=close_section)
+    return Orchestrator(name=name, pick_persona=pick_section,
+                        close_persona=close_section, verify_persona=verify_section)
 
 
 # ---------------------------------------------------------------------------
@@ -345,10 +350,22 @@ def load_state(state_file: Path) -> dict:
 def orchestrator_pick(session: Session, agents: list[Agent], orch: Orchestrator,
                       agent_list_str: str, max_turns: int, model: str,
                       dry_run: bool,
-                      recent_turns: int = 10) -> tuple[str, str]:
+                      recent_turns: int = 10) -> dict:
 
     transcript_ctx = get_transcript_context(session.transcript, session.utterances,
                                             recent_turns=recent_turns)
+
+    # When the orchestrator supports verification, it can also assign
+    # execute actions (implementation tasks) in addition to speak actions.
+    action_block = ""
+    if orch.verify_persona:
+        action_block = """
+You may also assign implementation tasks. In that case, output:
+{{"speaker": "<name>", "action": "execute", "task": "<specific implementation task>", "verify": "<verification command or criteria>", "reasoning": "<one sentence>"}}
+
+Use "action": "execute" when the discussion has reached enough consensus on a
+topic and it is time to implement. Use the default speak mode when agents need
+to discuss, review, or debate."""
 
     prompt = f"""You are the orchestrator of a structured forum discussion.
 
@@ -366,28 +383,26 @@ TRANSCRIPT (recent {recent_turns} turns):
 Output ONLY JSON (no markdown fences, no explanation):
 {{"speaker": "<name>", "reasoning": "<one sentence>"}}
 or
-{{"speaker": "CONSENSUS", "reasoning": "<summary of agreement>"}}"""
+{{"speaker": "CONSENSUS", "reasoning": "<summary of agreement>"}}{action_block}"""
 
     if dry_run:
         info(f"[DRY RUN] Orchestrator prompt ({len(prompt)} chars)")
-        return agents[0].name, "dry run"
+        return {"speaker": agents[0].name, "reasoning": "dry run"}
 
     raw = call_claude(prompt, model, skip_perms=True, label="Orchestrator",
                       timeout=120)
     if not raw:
         warn("Orchestrator returned empty response")
-        return "FALLBACK", "orchestrator failed"
+        return {"speaker": "FALLBACK", "reasoning": "orchestrator failed"}
 
     # Parse JSON -- handle markdown fences or extra text
     parsed = _extract_json(raw)
-    speaker = parsed.get("speaker", "FALLBACK")
-    reasoning = parsed.get("reasoning", "")
 
     # Log decision
     with session.orch_log.open("a", encoding="utf-8") as f:
         f.write(json.dumps(parsed) + "\n")
 
-    return speaker, reasoning
+    return parsed
 
 
 def _extract_json(text: str) -> dict:
@@ -492,6 +507,125 @@ Be specific and concrete. ASCII only."""
 
 
 # ---------------------------------------------------------------------------
+# Agent execute (implementation action)
+# ---------------------------------------------------------------------------
+
+def agent_execute(session: Session, agent: Agent, topic_body: str,
+                  task: dict, max_turns: int, model: str, dry_run: bool,
+                  mission_dir: Path | None = None,
+                  recent_turns: int = 10) -> str:
+    """Have an agent execute a specific implementation task."""
+
+    transcript_ctx = get_transcript_context(session.transcript, session.utterances,
+                                            recent_turns=recent_turns)
+
+    refs_block = ""
+    if mission_dir:
+        refs_dir = mission_dir / "references"
+        if refs_dir.is_dir() and any(refs_dir.iterdir()):
+            refs_block = (
+                f"\nREFERENCE MATERIALS: {refs_dir}/\n"
+                f"Read files in this directory for specs, plans, and context.\n"
+            )
+
+    task_desc = task.get("task", "")
+    verify_criteria = task.get("verify", "")
+
+    verify_block = ""
+    if verify_criteria:
+        verify_block = f"\nVERIFICATION CRITERIA:\n{verify_criteria}\n"
+
+    prompt = f"""You are "{agent.name}" executing a specific implementation task.
+
+YOUR ROLE AND EXPERTISE:
+{agent.persona}
+
+MISSION CONTEXT:
+{topic_body}
+{refs_block}
+YOUR TASK:
+{task_desc}
+{verify_block}
+YOUR NOTES FOLDER: {session.notes_dir}/{agent.name}/
+Write implementation notes, decisions made, and files changed to your notes
+folder. Log what you implemented and any deviations from the task spec.
+Append file paths you read to {session.notes_dir}/{agent.name}/files-read.md.
+
+OTHER AGENTS' NOTES: {session.notes_dir}/
+Read other agents' notes to understand what has been implemented so far.
+
+EXECUTION LOG:
+{transcript_ctx}
+
+INSTRUCTIONS:
+1. Read the spec/plan and understand the full context before coding
+2. Implement the task by creating or modifying the specified files
+3. After implementation, run any verification commands if specified
+4. Write a brief summary of what you did, files changed, and any issues
+
+Do not narrate your thinking process -- go straight to implementation.
+Turn {session.utterances + 1} of {max_turns}. ASCII only.
+Respond with a summary of what you implemented (100-300 words)."""
+
+    if dry_run:
+        info(f"[DRY RUN] Agent {agent.name} execute prompt ({len(prompt)} chars)")
+        return f"[dry run execution from {agent.name}]"
+
+    return (call_claude(prompt, model, skip_perms=True,
+                        label=f"Agent {agent.name} (execute)",
+                        timeout=600)
+            or "[agent declined]")
+
+
+# ---------------------------------------------------------------------------
+# Verify task (after execute action)
+# ---------------------------------------------------------------------------
+
+def verify_task(session: Session, orch: Orchestrator, task: dict,
+                agent_response: str, model: str, dry_run: bool) -> dict:
+    """Verify a completed task using the orchestrator's verification persona."""
+
+    if not orch.verify_persona:
+        return {"status": "pass", "details": "no verification configured"}
+
+    task_desc = task.get("task", "")
+    verify_criteria = task.get("verify", "")
+
+    prompt = f"""You are verifying a completed implementation task.
+
+YOUR VERIFICATION STRATEGY:
+{orch.verify_persona}
+
+TASK THAT WAS ASSIGNED:
+{task_desc}
+
+AGENT'S RESPONSE:
+{agent_response}
+
+VERIFICATION CRITERIA:
+{verify_criteria if verify_criteria else "(none specified -- check based on task description)"}
+
+If verification commands were specified, run them now and report results.
+Check that the implementation matches the task requirements.
+
+Output ONLY JSON (no markdown fences, no explanation):
+{{"status": "pass", "details": "<what was verified>"}}
+or
+{{"status": "fail", "details": "<what failed and why>"}}"""
+
+    if dry_run:
+        info(f"[DRY RUN] Verification prompt ({len(prompt)} chars)")
+        return {"status": "pass", "details": "dry run"}
+
+    raw = call_claude(prompt, model, skip_perms=True, label="Verification",
+                      timeout=300)
+    if not raw:
+        return {"status": "pass", "details": "verification call failed, assuming pass"}
+
+    return _extract_json(raw)
+
+
+# ---------------------------------------------------------------------------
 # Finalize and synthesize
 # ---------------------------------------------------------------------------
 
@@ -570,6 +704,17 @@ def synthesize(session: Session, roles_dir: Path, topic_body: str,
             notes_inventory_lines.append(f"{rel} ({p.stat().st_size} bytes)")
     notes_inventory = "\n".join(notes_inventory_lines)
 
+    # Check for archived previous synthesis (from --feedback runs)
+    prev_synthesis_block = ""
+    archived = sorted(session.work_dir.glob("synthesis-*.md"))
+    if archived:
+        latest_archived = archived[-1]
+        prev_synthesis_block = (
+            f"\nPREVIOUS SYNTHESIS: {latest_archived}\n"
+            f"Read this to understand the prior conclusions. The human provided\n"
+            f"feedback that triggered additional discussion -- focus on what changed.\n"
+        )
+
     synth_prompt = f"""You are the synthesizer for a completed forum discussion.
 
 YOUR ROLE:
@@ -591,7 +736,7 @@ Read the transcript for the full discussion flow.
 CLOSING SUMMARY: {session.work_dir / "closing.md"}
 Read this for what was agreed, what was unresolved, and which agents
 contributed what.
-
+{prev_synthesis_block}
 OUTPUT:
 Write the synthesized reference document to: {synthesis_file}
 
@@ -738,9 +883,14 @@ def main() -> None:
                         help="Resume session (slug-timestamp, e.g. gold-price-outlook-20260322-001929)")
     parser.add_argument("--synthesize-only", action="store_true",
                         help="Skip discussion, run finalize + synthesize (requires --resume)")
+    parser.add_argument("--feedback", default=None, metavar="TEXT",
+                        help="Inject human feedback into a completed session and resume discussion")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print prompts without calling Claude")
     args = parser.parse_args()
+
+    if args.feedback and not args.resume:
+        fatal("--feedback requires --resume to specify which session to continue")
 
     if args.synthesize_only and not args.resume:
         fatal("--synthesize-only requires --resume to specify the session")
@@ -897,16 +1047,28 @@ def main() -> None:
                         session.speakers_history.append(parts[1].split()[0].strip())
         # Warn if session already completed
         if state.get("status") == "completed":
-            synthesis_exists = (work_dir / "synthesis.md").exists()
-            if not synthesis_exists:
-                warn("Session already completed but synthesis.md is missing.")
-                warn(f"Consider: ./scripts/forge.py {args.topic_file} "
-                     f"--resume {args.resume} --synthesize-only")
+            if args.feedback:
+                # --feedback on a completed session: archive old outputs and inject
+                archive_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                for fname in ("closing.md", "synthesis.md"):
+                    fpath = work_dir / fname
+                    if fpath.exists():
+                        stem = fpath.stem
+                        archived = fpath.with_name(f"{stem}-{archive_ts}.md")
+                        fpath.rename(archived)
+                        info(f"Archived {fname} -> {archived.name}")
+                info("Injecting feedback and resuming discussion")
             else:
-                warn("Session already completed (synthesis.md exists).")
-                warn("Re-entering discussion loop will add turns beyond "
-                     "original completion. Use --synthesize-only to re-run "
-                     "synthesis only.")
+                synthesis_exists = (work_dir / "synthesis.md").exists()
+                if not synthesis_exists:
+                    warn("Session already completed but synthesis.md is missing.")
+                    warn(f"Consider: ./scripts/forge.py {args.topic_file} "
+                         f"--resume {args.resume} --synthesize-only")
+                else:
+                    warn("Session already completed (synthesis.md exists).")
+                    warn("Re-entering discussion loop will add turns beyond "
+                         "original completion. Use --synthesize-only to re-run "
+                         "synthesis only.")
         session.interventions = state.get("interventions", [])
         info(f"Resuming at turn {session.utterances + 1}, last speaker: {session.last_speaker}")
     else:
@@ -956,6 +1118,11 @@ def main() -> None:
         info(f"Pause:     Ctrl+\\\\ or touch {work_dir}/PAUSE")
     print()
 
+    # Inject feedback before entering main loop
+    if args.feedback and resume_dir:
+        _inject_operator_turn(session, args.feedback)
+        _update_state("running")
+
     # Synthesize-only mode: skip discussion, run finalize + synthesize
     if args.synthesize_only:
         if not state_file.exists():
@@ -987,17 +1154,23 @@ def main() -> None:
     while session.utterances < max_turns:
         print(f"{BOLD}--- Orchestrator picking speaker (turn {session.utterances + 1}/{max_turns}) ---{NC}")
 
-        speaker, reasoning = orchestrator_pick(
+        pick_result = orchestrator_pick(
             session, agents, orch, agent_list_str, max_turns, model, args.dry_run,
             recent_turns=recent_window
         )
+
+        speaker = pick_result.get("speaker", "FALLBACK")
+        reasoning = pick_result.get("reasoning", "")
+        action = pick_result.get("action", "speak")
 
         # Save orchestrator utterance
         orch_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         (utterances_dir / f"{orch_ts}-host.md").write_text(
             f"# Orchestrator -- Turn {session.utterances + 1}\n\n"
             f"**Speaker picked**: {speaker}\n"
-            f"**Reasoning**: {reasoning}\n",
+            f"**Action**: {action}\n"
+            f"**Reasoning**: {reasoning}\n"
+            + (f"**Task**: {pick_result.get('task', '')}\n" if action == "execute" else ""),
             encoding="utf-8",
         )
 
@@ -1021,6 +1194,7 @@ def main() -> None:
             else:
                 warn("Orchestrator fallback -> round-robin")
             speaker = next_round_robin(agents, session.last_speaker)
+            action = "speak"  # fallback always speaks
 
         # Anti-loop guard: same agent 3x consecutive -> force rotation
         if speaker == session.last_speaker:
@@ -1033,15 +1207,22 @@ def main() -> None:
             speaker = next_round_robin(agents, speaker)
             session.consecutive_count = 1
 
-        speaker_line(speaker, reasoning)
+        action_label = f" (execute)" if action == "execute" else ""
+        speaker_line(speaker, f"{reasoning}{action_label}")
 
         # Find agent object
         agent = next((a for a in agents if a.name == speaker), agents[0])
 
-        # Agent speaks
-        response = agent_speak(session, agent, topic_body, max_turns, model, args.dry_run,
-                                mission_dir=topic_path.parent,
-                                recent_turns=recent_window)
+        # Agent speaks or executes based on orchestrator's action decision
+        if action == "execute":
+            response = agent_execute(session, agent, topic_body, pick_result,
+                                     max_turns, model, args.dry_run,
+                                     mission_dir=topic_path.parent,
+                                     recent_turns=recent_window)
+        else:
+            response = agent_speak(session, agent, topic_body, max_turns, model,
+                                   args.dry_run, mission_dir=topic_path.parent,
+                                   recent_turns=recent_window)
         if not response:
             response = "[agent declined]"
 
@@ -1049,22 +1230,57 @@ def main() -> None:
         agent_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_name = speaker.replace("/", "_")
         (utterances_dir / f"{agent_ts}-{safe_name}.md").write_text(
-            f"# {speaker} -- Turn {session.utterances + 1}\n\n{response}\n",
+            f"# {speaker} -- Turn {session.utterances + 1}"
+            + (f" (execute)\n\n**Task**: {pick_result.get('task', '')}\n\n" if action == "execute" else "\n\n")
+            + f"{response}\n",
             encoding="utf-8",
         )
 
         # Append to transcript
         turn_time = datetime.now().strftime("%H:%M")
         with transcript.open("a", encoding="utf-8") as f:
-            f.write(f"### Turn {session.utterances + 1} -- {speaker} [{turn_time}]\n"
-                    f"{response}\n\n---\n\n")
+            f.write(f"### Turn {session.utterances + 1} -- {speaker} [{turn_time}]"
+                    + (f" [execute]" if action == "execute" else "") + "\n"
+                    + (f"**Task**: {pick_result.get('task', '')}\n\n" if action == "execute" else "")
+                    + f"{response}\n\n---\n\n")
 
         session.utterances += 1
         session.last_speaker = speaker
         session.speakers_history.append(speaker)
+
+        # Verify after execute actions
+        if action == "execute" and orch.verify_persona and not args.dry_run:
+            print(f"{BOLD}--- Verifying task ---{NC}")
+            verification = verify_task(session, orch, pick_result, response,
+                                       model, args.dry_run)
+            v_status = verification.get("status", "pass")
+            v_details = verification.get("details", "")
+
+            # Save verification to notes
+            verify_notes = session.notes_dir / "_verification"
+            verify_notes.mkdir(parents=True, exist_ok=True)
+            (verify_notes / f"turn-{session.utterances}.md").write_text(
+                f"# Verification -- Turn {session.utterances}\n\n"
+                f"**Status**: {v_status}\n"
+                f"**Details**: {v_details}\n",
+                encoding="utf-8",
+            )
+
+            # Append verification to transcript
+            with transcript.open("a", encoding="utf-8") as f:
+                v_time = datetime.now().strftime("%H:%M")
+                f.write(f"### Verification -- Turn {session.utterances} [{v_time}]\n"
+                        f"**Status**: {v_status}\n"
+                        f"**Details**: {v_details}\n\n---\n\n")
+
+            if v_status == "pass":
+                ok(f"Task verified: {v_details[:100]}")
+            else:
+                warn(f"Task failed verification: {v_details[:100]}")
+
         _update_state("running")
 
-        ok(f"Turn {session.utterances}/{max_turns} complete ({speaker})")
+        ok(f"Turn {session.utterances}/{max_turns} complete ({speaker}{action_label})")
 
         # Check for pause triggers (Ctrl+\ signal or PAUSE file)
         if not args.dry_run and _check_pause(session) and sys.stdout.isatty():
