@@ -35,6 +35,7 @@ Examples:
 
 import argparse
 import collections
+from collections import Counter
 import json
 import os
 import re
@@ -251,6 +252,7 @@ def call_claude(prompt: str, model: str, skip_perms: bool = False,
             if attempt < max_retries - 1:
                 time.sleep(2)
             continue
+
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         if attempt < max_retries - 1:
@@ -355,6 +357,35 @@ def orchestrator_pick(session: Session, agents: list[Agent], orch: Orchestrator,
     transcript_ctx = get_transcript_context(session.transcript, session.utterances,
                                             recent_turns=recent_turns)
 
+    # Build speaker statistics from history
+    speaker_stats = ""
+    if session.speakers_history:
+        counts = Counter(session.speakers_history)
+        stats_parts = [f"{name}: {count}" for name, count in counts.most_common()]
+        speaker_stats = f"\nSPEAKER HISTORY ({session.utterances} turns):\n  {', '.join(stats_parts)}\n"
+
+    # Build recent orchestrator decisions from log
+    recent_decisions = ""
+    if session.orch_log.exists():
+        lines = session.orch_log.read_text(encoding="utf-8").strip().splitlines()
+        # Show last 5 decisions for context
+        recent = lines[-5:] if len(lines) > 5 else lines
+        decision_parts = []
+        # Compute starting turn number: current utterances - len(recent)
+        start_turn = session.utterances - len(recent) + 1
+        for i, line in enumerate(recent):
+            try:
+                d = json.loads(line)
+                speaker = d.get("speaker", "?")
+                reasoning = d.get("reasoning", "")
+                action = d.get("action", "")
+                action_tag = f" [{action}]" if action and action != "speak" else ""
+                decision_parts.append(f"  T{start_turn + i}: {speaker}{action_tag} -- \"{reasoning}\"")
+            except json.JSONDecodeError:
+                continue
+        if decision_parts:
+            recent_decisions = "\nRECENT DECISIONS:\n" + "\n".join(decision_parts) + "\n"
+
     # When the orchestrator supports verification, it can also assign
     # execute actions (implementation tasks) in addition to speak actions.
     action_block = ""
@@ -375,12 +406,12 @@ YOUR ORCHESTRATION STRATEGY:
 {orch.pick_persona}
 
 - Turn {session.utterances + 1} of {max_turns}
-- Agent notes are at: {session.notes_dir}/ -- read them to understand earlier context
-
-TRANSCRIPT (recent {recent_turns} turns):
+{speaker_stats}{recent_decisions}
+TRANSCRIPT (recent turns):
 {transcript_ctx}
 
-Output ONLY JSON (no markdown fences, no explanation):
+Do NOT use any tools. Do NOT read any files. Respond with ONLY JSON
+(no markdown fences, no explanation):
 {{"speaker": "<name>", "reasoning": "<one sentence>"}}
 or
 {{"speaker": "CONSENSUS", "reasoning": "<summary of agreement>"}}{action_block}"""
