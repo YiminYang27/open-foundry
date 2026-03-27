@@ -1,0 +1,17 @@
+name: Lint Role Files
+
+on:
+  push:
+    paths:
+      - 'roles/**/*.md'
+  pull_request:
+    paths:
+      - 'roles/**/*.md'
+
+jobs:
+  lint-roles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate role files
+        run: bash scripts/lint-roles.sh

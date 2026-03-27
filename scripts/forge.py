@@ -1279,35 +1279,66 @@ def main() -> None:
         session.last_speaker = speaker
         session.speakers_history.append(speaker)
 
-        # Verify after execute actions
+        # Verify after execute actions (with retry loop)
         if action == "execute" and orch.verify_persona and not args.dry_run:
-            print(f"{BOLD}--- Verifying task ---{NC}")
-            verification = verify_task(session, orch, pick_result, response,
-                                       model, args.dry_run)
-            v_status = verification.get("status", "pass")
-            v_details = verification.get("details", "")
+            max_task_retries = 3
+            for retry_attempt in range(max_task_retries):
+                attempt_label = (f" (retry {retry_attempt}/{max_task_retries})"
+                                 if retry_attempt > 0 else "")
+                print(f"{BOLD}--- Verifying task{attempt_label} ---{NC}")
+                verification = verify_task(session, orch, pick_result, response,
+                                           model, args.dry_run)
+                v_status = verification.get("status", "pass")
+                v_details = verification.get("details", "")
 
-            # Save verification to notes
-            verify_notes = session.notes_dir / "_verification"
-            verify_notes.mkdir(parents=True, exist_ok=True)
-            (verify_notes / f"turn-{session.utterances}.md").write_text(
-                f"# Verification -- Turn {session.utterances}\n\n"
-                f"**Status**: {v_status}\n"
-                f"**Details**: {v_details}\n",
-                encoding="utf-8",
-            )
+                # Save verification to notes
+                verify_notes = session.notes_dir / "_verification"
+                verify_notes.mkdir(parents=True, exist_ok=True)
+                suffix = f"-retry{retry_attempt}" if retry_attempt > 0 else ""
+                (verify_notes / f"turn-{session.utterances}{suffix}.md").write_text(
+                    f"# Verification -- Turn {session.utterances}{attempt_label}\n\n"
+                    f"**Status**: {v_status}\n"
+                    f"**Details**: {v_details}\n",
+                    encoding="utf-8",
+                )
 
-            # Append verification to transcript
-            with transcript.open("a", encoding="utf-8") as f:
-                v_time = datetime.now().strftime("%H:%M")
-                f.write(f"### Verification -- Turn {session.utterances} [{v_time}]\n"
-                        f"**Status**: {v_status}\n"
-                        f"**Details**: {v_details}\n\n---\n\n")
+                # Append verification to transcript
+                with transcript.open("a", encoding="utf-8") as f:
+                    v_time = datetime.now().strftime("%H:%M")
+                    f.write(f"### Verification -- Turn {session.utterances}"
+                            f"{attempt_label} [{v_time}]\n"
+                            f"**Status**: {v_status}\n"
+                            f"**Details**: {v_details}\n\n---\n\n")
 
-            if v_status == "pass":
-                ok(f"Task verified: {v_details[:100]}")
-            else:
-                warn(f"Task failed verification: {v_details[:100]}")
+                if v_status == "pass":
+                    ok(f"Task verified: {v_details[:100]}")
+                    break
+
+                # Retry: re-execute with failure feedback
+                if retry_attempt < max_task_retries - 1:
+                    warn(f"Task failed verification (attempt "
+                         f"{retry_attempt + 1}/{max_task_retries}): "
+                         f"{v_details[:100]}")
+                    retry_task = dict(pick_result)
+                    retry_task["task"] = (pick_result.get("task", "")
+                                          + f"\n\nPREVIOUS ATTEMPT FAILED: "
+                                          + v_details)
+                    response = agent_execute(
+                        session, agent, topic_body, retry_task,
+                        max_turns, model, args.dry_run,
+                        mission_dir=topic_path.parent,
+                        recent_turns=recent_window)
+                    # Append retry response to transcript
+                    with transcript.open("a", encoding="utf-8") as f:
+                        r_time = datetime.now().strftime("%H:%M")
+                        f.write(f"### Turn {session.utterances} -- {speaker}"
+                                f" [execute retry {retry_attempt + 1}]"
+                                f" [{r_time}]\n"
+                                f"**Task**: {retry_task.get('task', '')}\n\n"
+                                f"{response}\n\n---\n\n")
+                else:
+                    warn(f"Task failed after {max_task_retries} attempts: "
+                         f"{v_details[:100]}")
 
         _update_state("running")
 
