@@ -23,7 +23,10 @@ open-foundry/
     orchestrator/       Orchestration strategies (default, finance_moderator)
   missions/             Mission definitions (MISSION.md + optional references/)
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
-  scripts/              Orchestration scripts (forge.py)
+  src/
+    forge.py            Main orchestrator implementation
+    prompts/            Externalized prompt templates (.md files)
+  scripts/              Entry points (forge.py wrapper)
   .claude/skills/       Agent Skills for guided creation workflows
 ```
 
