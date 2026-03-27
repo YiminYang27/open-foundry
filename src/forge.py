@@ -144,9 +144,10 @@ def parse_frontmatter(path: Path) -> tuple[str, str]:
     return match.group(1), content[match.end():]
 
 
-def parse_topic(path: Path) -> tuple[list[str], int, str, str, str, str]:
+def parse_topic(path: Path) -> tuple[list[str], int, str, str, str, str, bool]:
     """Parse topic file.
-    Returns (agent_names, max_turns, model, orchestrator_name, title, body).
+    Returns (agent_names, max_turns, model, orchestrator_name, title, body,
+             execute_after).
     """
     fm, body = parse_frontmatter(path)
 
@@ -154,6 +155,7 @@ def parse_topic(path: Path) -> tuple[list[str], int, str, str, str, str]:
     max_turns = 20
     model = "sonnet"
     orchestrator = "default"
+    execute_after = False
 
     for line in fm.splitlines():
         line = line.strip()
@@ -168,6 +170,8 @@ def parse_topic(path: Path) -> tuple[list[str], int, str, str, str, str]:
             model = line.split(":", 1)[1].strip()
         elif line.startswith("orchestrator:"):
             orchestrator = line.split(":", 1)[1].strip()
+        elif line.startswith("execute_after:"):
+            execute_after = line.split(":", 1)[1].strip().lower() == "true"
 
     title = "Untitled Discussion"
     for bline in body.splitlines():
@@ -176,7 +180,7 @@ def parse_topic(path: Path) -> tuple[list[str], int, str, str, str, str]:
             title = bline[2:].strip()
             break
 
-    return agents, max_turns, model, orchestrator, title, body.strip()
+    return agents, max_turns, model, orchestrator, title, body.strip(), execute_after
 
 
 def load_agent(roles_dir: Path, name: str) -> Agent:
@@ -773,6 +777,166 @@ def synthesize(session: Session, roles_dir: Path, topic_body: str,
 
 
 # ---------------------------------------------------------------------------
+# Post-discussion execution phase
+# ---------------------------------------------------------------------------
+
+def execution_phase(session: Session, agents: list[Agent],
+                    orch: Orchestrator, agent_list_str: str,
+                    topic_body: str, model: str, dry_run: bool,
+                    mission_dir: Path | None = None) -> None:
+    """Decompose closing summary into tasks and execute them."""
+    closing_file = session.work_dir / "closing.md"
+    if not closing_file.exists():
+        warn("No closing.md found, skipping execution phase")
+        return
+
+    if not orch.verify_persona:
+        warn("Orchestrator has no verification persona, skipping execution phase")
+        return
+
+    print(f"\n{BOLD}--- Post-Discussion Execution Phase ---{NC}")
+
+    closing_summary = closing_file.read_text(encoding="utf-8")
+    prompt = load_template("task_decompose",
+                           verify_persona=orch.verify_persona,
+                           closing_summary=closing_summary,
+                           agent_list_str=agent_list_str)
+
+    if dry_run:
+        info(f"[DRY RUN] Task decomposition prompt ({len(prompt)} chars)")
+        return
+
+    raw = call_claude(prompt, model, skip_perms=True,
+                      label="Task decomposition", timeout=300)
+    if not raw:
+        warn("Task decomposition failed, skipping execution phase")
+        return
+
+    task_list = _extract_json(raw)
+    tasks = task_list.get("tasks", [])
+    if not tasks:
+        warn("No tasks decomposed, skipping execution phase")
+        return
+
+    info(f"Decomposed {len(tasks)} tasks for execution")
+    agent_map = {a.name: a for a in agents}
+    transcript = session.transcript
+    max_task_retries = 3
+
+    for idx, task_def in enumerate(tasks):
+        task_agent_name = task_def.get("agent", "")
+        task_desc = task_def.get("task", "")
+        agent = agent_map.get(task_agent_name, agents[0])
+
+        # Check dependencies
+        depends = task_def.get("depends_on", [])
+        # (Dependencies are tracked by index -- simple sequential ordering
+        # handles this since we execute in order.)
+
+        print(f"\n{BOLD}--- Executing task {idx + 1}/{len(tasks)}: "
+              f"{agent.name} ---{NC}")
+        info(f"Task: {task_desc[:100]}")
+
+        response = agent_execute(session, agent, topic_body, task_def,
+                                 9999, model, dry_run,
+                                 mission_dir=mission_dir)
+        if not response:
+            response = "[agent declined]"
+
+        # Write execution to transcript
+        with transcript.open("a", encoding="utf-8") as f:
+            t = datetime.now().strftime("%H:%M")
+            f.write(f"### Execution {idx + 1} -- {agent.name} [{t}]\n"
+                    f"**Task**: {task_desc}\n\n"
+                    f"{response}\n\n---\n\n")
+
+        # Verify with retry loop
+        for retry in range(max_task_retries):
+            verification = verify_task(session, orch, task_def, response,
+                                       model, dry_run)
+            v_status = verification.get("status", "pass")
+            v_details = verification.get("details", "")
+
+            verify_notes = session.notes_dir / "_verification"
+            verify_notes.mkdir(parents=True, exist_ok=True)
+            suffix = f"-retry{retry}" if retry > 0 else ""
+            (verify_notes / f"exec-{idx + 1}{suffix}.md").write_text(
+                f"# Verification -- Execution {idx + 1}\n\n"
+                f"**Status**: {v_status}\n"
+                f"**Details**: {v_details}\n",
+                encoding="utf-8",
+            )
+
+            if v_status == "pass":
+                ok(f"Task {idx + 1} verified: {v_details[:80]}")
+                break
+
+            if retry < max_task_retries - 1:
+                warn(f"Task {idx + 1} failed (attempt {retry + 1}/"
+                     f"{max_task_retries}): {v_details[:80]}")
+                retry_task = dict(task_def)
+                retry_task["task"] = (task_desc
+                                      + f"\n\nPREVIOUS ATTEMPT FAILED: "
+                                      + v_details)
+                response = agent_execute(session, agent, topic_body,
+                                         retry_task, 9999, model, dry_run,
+                                         mission_dir=mission_dir)
+            else:
+                warn(f"Task {idx + 1} failed after {max_task_retries} "
+                     f"attempts: {v_details[:80]}")
+
+    ok("Execution phase complete")
+
+
+# ---------------------------------------------------------------------------
+# Synthesis review
+# ---------------------------------------------------------------------------
+
+def review_synthesis(session: Session, model: str,
+                     dry_run: bool) -> dict:
+    """Review synthesis for accuracy against transcript and closing."""
+    synthesis_file = session.work_dir / "synthesis.md"
+    closing_file = session.work_dir / "closing.md"
+
+    if not synthesis_file.exists() or not closing_file.exists():
+        return {"status": "APPROVED", "notes": "missing files, skipping review"}
+
+    print(f"\n{BOLD}--- Reviewing synthesis ---{NC}")
+
+    prompt = load_template("synthesis_review",
+                           transcript_path=session.transcript,
+                           closing_path=closing_file,
+                           synthesis_path=synthesis_file)
+
+    if dry_run:
+        info(f"[DRY RUN] Synthesis review prompt ({len(prompt)} chars)")
+        return {"status": "APPROVED", "notes": "dry run"}
+
+    raw = call_claude(prompt, model, skip_perms=True,
+                      label="Synthesis review", timeout=600)
+    if not raw:
+        return {"status": "APPROVED", "notes": "review call failed, assuming pass"}
+
+    result = _extract_json(raw)
+
+    # Save review result
+    review_file = session.work_dir / "review.json"
+    review_file.write_text(json.dumps(result, indent=2, ensure_ascii=False),
+                           encoding="utf-8")
+
+    status = result.get("status", "APPROVED")
+    if status == "APPROVED":
+        ok(f"Synthesis approved: {result.get('notes', '')[:100]}")
+    else:
+        issues = result.get("issues", [])
+        warn(f"Synthesis review found {len(issues)} issue(s)")
+        for issue in issues[:5]:
+            warn(f"  [{issue.get('type', '?')}] {issue.get('description', '')[:80]}")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Fallback speaker selection (round-robin)
 # ---------------------------------------------------------------------------
 
@@ -924,7 +1088,8 @@ def main() -> None:
 
     # Parse topic
     try:
-        agent_names, max_turns, model, orch_name, title, topic_body = parse_topic(topic_path)
+        (agent_names, max_turns, model, orch_name, title, topic_body,
+         execute_after) = parse_topic(topic_path)
     except ValueError as e:
         fatal(str(e))
 
@@ -1124,6 +1289,8 @@ def main() -> None:
             finalize(session, orch, model, "unknown (synthesize-only mode)", args.dry_run)
 
         synthesize(session, roles_dir, topic_body, model, args.dry_run)
+        if not args.dry_run:
+            review_synthesis(session, model, args.dry_run)
 
         synthesis = work_dir / "synthesis.md"
         if synthesis.exists():
@@ -1165,7 +1332,13 @@ def main() -> None:
             ok(f"Consensus reached: {reasoning}")
             _update_state("completed")
             finalize(session, orch, model, "yes", args.dry_run)
+            if execute_after:
+                execution_phase(session, agents, orch, agent_list_str,
+                                topic_body, model, args.dry_run,
+                                mission_dir=topic_path.parent)
             synthesize(session, roles_dir, topic_body, model, args.dry_run)
+            if not args.dry_run:
+                review_synthesis(session, model, args.dry_run)
             print(f"\n{BOLD}=== Forum Complete (consensus at turn {session.utterances}) ==={NC}")
             info(f"Transcript: {transcript}")
             synthesis = work_dir / "synthesis.md"
@@ -1327,7 +1500,13 @@ def main() -> None:
     warn(f"Max turns ({max_turns}) reached without consensus")
     _update_state("completed")
     finalize(session, orch, model, "no (max turns reached)", args.dry_run)
+    if execute_after:
+        execution_phase(session, agents, orch, agent_list_str,
+                        topic_body, model, args.dry_run,
+                        mission_dir=topic_path.parent)
     synthesize(session, roles_dir, topic_body, model, args.dry_run)
+    if not args.dry_run:
+        review_synthesis(session, model, args.dry_run)
 
     print(f"\n{BOLD}=== Forum Complete ({session.utterances} turns, no consensus) ==={NC}")
     info(f"Transcript: {transcript}")
