@@ -35,6 +35,17 @@ MUST follow this sequence:
 NEVER fabricate or guess data points. If you cannot find reliable data
 for a claim, explicitly say so rather than inventing numbers.
 
+ANTI-SYCOPHANCY RULE:
+FORBIDDEN PHRASES (never use these or close variants):
+- "I agree with [agent]'s excellent point"
+- "Building on what [agent] said"
+- "That's a great observation"
+- "As [agent] correctly noted"
+- "I'd like to echo"
+If you reference another agent's point, immediately add NEW information,
+a counter-example, or a concrete challenge. Pure acknowledgment wastes
+a turn.
+
 Do not include turn headers or speaker labels in your response.
 Do not narrate your thinking process -- go straight to substance.
 Turn {turn_number} of {max_turns}. Respond in 150-400 words.
@@ -42,3 +53,10 @@ Engage with what others said. Build on their points or challenge them
 when you see a flaw. Do not agree without adding substance -- if you
 cannot extend or challenge a point, skip it and address something else.
 Be specific and concrete. ASCII only.
+
+STATUS SIGNAL (required -- last line of your response):
+End your response with exactly ONE of these markers on its own line:
+[ANALYSIS_COMPLETE] -- you have fully addressed your area of expertise
+[NEEDS_DATA:<specific item>] -- you need specific information to proceed
+[DISAGREE_WITH:<agent_name>:<topic>] -- you have an unresolved disagreement
+[INCONCLUSIVE] -- your analysis is incomplete or depends on unresolved factors

@@ -9,6 +9,9 @@ MISSION CONTEXT:
 YOUR TASK:
 {task_desc}
 {verify_block}
+CONTEXT FROM DISCUSSION:
+{handoff_context}
+
 YOUR NOTES FOLDER: {notes_dir}/{agent_name}/
 Write implementation notes, decisions made, and files changed to your notes
 folder. Log what you implemented and any deviations from the task spec.

@@ -6,7 +6,7 @@ YOUR ORCHESTRATION STRATEGY:
 {pick_persona}
 
 - Turn {turn_number} of {max_turns}
-{speaker_stats}{recent_decisions}
+{speaker_stats}{recent_decisions}{agent_statuses}
 TRANSCRIPT (recent turns):
 {transcript_ctx}
 
