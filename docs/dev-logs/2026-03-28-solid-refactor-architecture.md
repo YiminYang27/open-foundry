@@ -22,7 +22,9 @@ forge/
   models/
     models.py         57   Agent, Orchestrator, Session, ForumContext
   llm/
-    llm.py           136   LLMProvider Protocol + ClaudeCLI implementation
+    llm_provider.py   41   LLMProvider ABC (complete + stream contract)
+    claude_cli.py     99   ClaudeCLI(LLMProvider) concrete implementation
+    llm_provider_factory.py 17  Factory: create provider by name
   roles/
     roles.py         129   RoleStore + parse_mission
   utils/
@@ -39,19 +41,21 @@ forge/
 ```
 app.py (composition root)
   |
-  |-- constructs --> ClaudeCLI, RoleStore, SessionManager, ForumContext
-  |-- constructs --> AgentService(llm, smgr)
-  |-- constructs --> OrchestratorService(llm, smgr)
-  |-- constructs --> SynthesisService(llm, smgr, role_store)
-  |-- constructs --> ForumWorkflow(smgr, ctx, orch_svc, agent_svc, synth_svc)
+  |-- LLMProviderFactory.create("claude-cli", model, dry_run)
+  |     -> returns LLMProvider (abstraction)
+  |-- constructs --> RoleStore, SessionManager, ForumContext
+  |-- constructs --> AgentService(llm: LLMProvider, smgr)
+  |-- constructs --> OrchestratorService(llm: LLMProvider, smgr)
+  |-- constructs --> SynthesisService(llm: LLMProvider, smgr, role_store)
+  |-- constructs --> ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
   +-- calls      --> workflow.run()
 
 ForumWorkflow ---delegates--> OrchestratorService, AgentService,
                               SynthesisService, SessionManager
 
-OrchestratorService ---uses--> SessionManager, ClaudeCLI, load_template, extract_json
-AgentService        ---uses--> SessionManager, ClaudeCLI, load_template
-SynthesisService    ---uses--> SessionManager, ClaudeCLI, RoleStore,
+OrchestratorService ---uses--> SessionManager, LLMProvider, load_template, extract_json
+AgentService        ---uses--> SessionManager, LLMProvider, load_template
+SynthesisService    ---uses--> SessionManager, LLMProvider, RoleStore,
                                load_template, extract_json
 SessionManager      ---uses--> Session (dataclass), Logger
 ```
@@ -71,7 +75,7 @@ main()
   |                                       # -> (agent_names, max_turns, model, orch_name,
   |                                       #     title, mission_body, execute_after)
   |
-  |-- ClaudeCLI(model, dry_run)           # construct LLM provider
+  |-- LLMProviderFactory.create("claude-cli", model, dry_run)  # LLM provider
   |-- RoleStore(project_root / "roles")   # construct role loader
   |     |-- .get_agent(name) x N          # load each agent .md -> Agent
   |     +-- .get_orchestrator(orch_name)  # load orchestrator .md -> Orchestrator
@@ -83,11 +87,11 @@ main()
   |-- [resume] SessionManager.resume(work_dir, agents)
   |              -> loads state.json, rebuilds speakers_history
   |
-  |-- AgentService(llm, smgr)
-  |-- OrchestratorService(llm, smgr)
-  |-- SynthesisService(llm, smgr, role_store)
+  |-- AgentService(llm: LLMProvider, smgr)
+  |-- OrchestratorService(llm: LLMProvider, smgr)
+  |-- SynthesisService(llm: LLMProvider, smgr, role_store)
   |
-  |-- ForumWorkflow(smgr, ctx, orch_svc, agent_svc, synth_svc)
+  |-- ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
   +-- workflow.run(execute_after, feedback, synthesize_only, ...)
 ```
 
@@ -224,7 +228,9 @@ _finalize_and_synthesize(consensus_status, ...)
 | synthesis.py | SynthesisService | synthesize, review | Post-discussion synthesis + quality check |
 | session_io.py | SessionManager | create, resume, update_state, append_*, archive_outputs, inject_operator_turn, get_transcript_context, truncate_transcript_for_closing | All session filesystem I/O |
 | models/ | Agent, Orchestrator, Session, ForumContext | (dataclasses) | Pure data structures |
-| llm/ | ClaudeCLI, LLMProvider | complete, stream | LLM provider abstraction |
+| llm/llm_provider.py | LLMProvider (ABC) | complete, stream | Abstract base -- stream returns None if unsupported |
+| llm/claude_cli.py | ClaudeCLI(LLMProvider) | complete, stream | Concrete provider wrapping `claude -p` CLI |
+| llm/llm_provider_factory.py | LLMProviderFactory | create(provider, model, dry_run) | Factory for constructing providers by name |
 | roles/ | RoleStore | get_agent, get_orchestrator, get_synthesizer_persona | Role file loading |
 | utils/cli.py | - | parse_args, resolve_paths | CLI argument parsing |
 | utils/logger.py | Logger | info, ok, warn, err, fatal, speaker_line | Logging |
@@ -262,30 +268,32 @@ sessions/{slug}-{timestamp}/
 Workflow changes? Edit workflow.py. Prompt format changes? Edit prompts/.
 Session format changes? Edit session_io.py.
 
-**O - Open/Closed**: New LLM providers implement LLMProvider Protocol without
-modifying existing code. New orchestration strategies can subclass
-OrchestratorService.
+**O - Open/Closed**: New LLM providers inherit LLMProvider ABC and register
+in LLMProviderFactory -- no existing code modified. New orchestration
+strategies can subclass OrchestratorService.
 
-**L - Liskov Substitution**: LLMProvider is a Protocol (structural subtyping).
-Any class with a matching complete() method satisfies it.
+**L - Liskov Substitution**: All LLMProvider subclasses must implement
+complete() and stream(). stream() returns int (exit code) or None if
+unsupported -- callers check `rc is not None`.
 
-**I - Interface Segregation**: LLMProvider requires only complete(). The
-stream() method is ClaudeCLI-specific, checked via hasattr().
+**I - Interface Segregation**: LLMProvider contract has both complete() and
+stream(). Providers that don't support streaming return None from stream()
+rather than raising -- callers degrade gracefully.
 
-**D - Dependency Inversion**: High-level modules (ForumWorkflow) depend on
-abstractions (LLMProvider, SessionManager), not concretions. All dependencies
-are injected via constructors in app.py.
+**D - Dependency Inversion**: All services typed against LLMProvider (ABC),
+never ClaudeCLI. Construction via LLMProviderFactory in app.py. No module
+outside forge/llm/ and forge/app.py references a concrete provider.
 
 ---
 
-## 6. Next: LLM Provider Redesign
+## 6. LLM Provider Design
 
-### Problem
+### Problem Solved
 
-Current `forge/llm/llm.py` mixes interface and implementation in one file.
-`LLMProvider` is a Protocol with only `complete()` -- `stream()` is
+The original `forge/llm/llm.py` mixed interface and implementation in one
+file. `LLMProvider` was a Protocol with only `complete()` -- `stream()` was
 ClaudeCLI-specific, checked via `hasattr()` in callers. All service type
-hints use `ClaudeCLI` concretely, violating Dependency Inversion.
+hints used `ClaudeCLI` concretely, violating Dependency Inversion.
 
 ### Target Structure
 
@@ -315,11 +323,13 @@ class LLMProvider(ABC):
 
     @property
     @abstractmethod
-    def model(self) -> str: ...
+    def model(self) -> str:
+        raise NotImplementedError
 
     @property
     @abstractmethod
-    def dry_run(self) -> bool: ...
+    def dry_run(self) -> bool:
+        raise NotImplementedError
 
     @abstractmethod
     def complete(self, prompt: str, *,
@@ -327,7 +337,7 @@ class LLMProvider(ABC):
                  timeout: int = 600,
                  max_retries: int = 3) -> str:
         """Send prompt, return response text. Empty string on failure."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def stream(self, prompt: str, *,
@@ -337,7 +347,7 @@ class LLMProvider(ABC):
         """Send prompt with streaming output.
         Return exit code (0 = success), or None if unsupported.
         """
-        ...
+        raise NotImplementedError
 ```
 
 Key change: `stream()` is now part of the contract. Providers that don't
@@ -366,8 +376,8 @@ Moved to `claude_cli.py`, inherits `LLMProvider`:
 
 ```python
 class ClaudeCLI(LLMProvider):
-    def complete(...) -> str: ...    # existing logic
-    def stream(...) -> int | None: ... # returns int (exit code), never None
+    def complete(...) -> str:        # subprocess.run with retry loop
+    def stream(...) -> int | None:   # capture_output=False, returns exit code
 ```
 
 ### Caller Changes
