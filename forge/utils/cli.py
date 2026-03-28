@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         epilog=__doc__,
         add_help=True,
     )
-    parser.add_argument("topic_file",
+    parser.add_argument("mission",
                         help="Mission slug or path (e.g. gold-price-outlook)")
     parser.add_argument("--max-turns", type=int, default=None,
                         help="Override max utterances")
@@ -60,8 +60,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
-    """Resolve project root, topic path, and optional resume dir.
-    Returns (project_root, topic_path, resume_dir).
+    """Resolve project root, mission path, and optional resume dir.
+    Returns (project_root, mission_path, resume_dir).
     """
     # Find project root by walking up to CLAUDE.md
     script_dir = Path(__file__).resolve().parent
@@ -71,21 +71,21 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     if not (project_root / "CLAUDE.md").exists():
         project_root = project_root.parent
 
-    topic_path = Path(args.topic_file)
-    if not topic_path.is_absolute():
+    mission_path = Path(args.mission)
+    if not mission_path.is_absolute():
         missions_dir = project_root / "missions"
-        candidate = missions_dir / topic_path
+        candidate = missions_dir / mission_path
         if candidate.exists():
-            topic_path = candidate
+            mission_path = candidate
         else:
-            topic_path = project_root / topic_path
-    if topic_path.is_dir():
-        mission_file = topic_path / "MISSION.md"
+            mission_path = project_root / mission_path
+    if mission_path.is_dir():
+        mission_file = mission_path / "MISSION.md"
         if not mission_file.exists():
-            logger.fatal(f"MISSION.md not found in {topic_path}")
-        topic_path = mission_file
-    if not topic_path.exists():
-        logger.fatal(f"Mission not found: {topic_path}")
+            logger.fatal(f"MISSION.md not found in {mission_path}")
+        mission_path = mission_file
+    if not mission_path.exists():
+        logger.fatal(f"Mission not found: {mission_path}")
 
     resume_dir = None
     if args.resume:
@@ -100,4 +100,4 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
         if not resume_dir.exists():
             logger.fatal(f"Resume directory not found: {resume_dir}")
 
-    return project_root, topic_path, resume_dir
+    return project_root, mission_path, resume_dir

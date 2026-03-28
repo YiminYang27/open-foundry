@@ -86,7 +86,7 @@ class RoleStore:
         orch_file = self._roles_dir / "orchestrator" / f"{name}.md"
         if not orch_file.exists():
             logger.fatal(f"Orchestrator role not found: {orch_file} "
-                  f"(referenced as '{name}' in topic)")
+                  f"(referenced as '{name}' in mission)")
 
         try:
             _, body = parse_frontmatter(orch_file)

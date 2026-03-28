@@ -3,8 +3,8 @@ You are the synthesizer for a completed forum discussion.
 YOUR ROLE:
 {synth_persona}
 
-DISCUSSION TOPIC:
-{topic_body}
+MISSION:
+{mission_body}
 
 NOTES DIRECTORY: {notes_dir}/
 Read all agent notes listed below. These contain the structured findings.

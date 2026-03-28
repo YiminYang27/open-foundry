@@ -22,7 +22,7 @@ def main() -> None:
     if args.synthesize_only and not args.resume:
         logger.fatal("--synthesize-only requires --resume to specify the session")
 
-    project_root, topic_path, resume_dir = resolve_paths(args)
+    project_root, mission_path, resume_dir = resolve_paths(args)
 
     # Check prerequisites
     if not shutil.which("claude"):
@@ -30,8 +30,8 @@ def main() -> None:
 
     # Parse mission
     try:
-        (agent_names, max_turns, model, orch_name, title, topic_body,
-         execute_after) = parse_mission(topic_path)
+        (agent_names, max_turns, model, orch_name, title, mission_body,
+         execute_after) = parse_mission(mission_path)
     except ValueError as e:
         logger.fatal(str(e))
 
@@ -42,7 +42,7 @@ def main() -> None:
         model = args.model
 
     if not agent_names:
-        logger.fatal("No agents defined in topic file")
+        logger.fatal("No agents defined in mission file")
 
     # Wire dependencies
     role_store = RoleStore(project_root / "roles")
@@ -60,8 +60,8 @@ def main() -> None:
         orch=orch,
         agent_list_str="".join(f"- {a.name}: {a.expertise}\n" for a in agents),
         max_turns=max_turns,
-        topic_body=topic_body,
-        mission_dir=topic_path.parent,
+        mission_body=mission_body,
+        mission_dir=mission_path.parent,
         recent_window=max(len(agents) + 2, 10),
     )
 
@@ -70,12 +70,12 @@ def main() -> None:
     if resume_dir:
         smgr, state = SessionManager.resume(resume_dir, agents)
     else:
-        slug = (topic_path.parent.name if topic_path.name == "MISSION.md"
-                else topic_path.stem)
-        smgr = SessionManager.create(project_root, slug, topic_path,
-                                     agents, title, max_turns, model, topic_body)
+        slug = (mission_path.parent.name if mission_path.name == "MISSION.md"
+                else mission_path.stem)
+        smgr = SessionManager.create(project_root, slug, mission_path,
+                                     agents, title, max_turns, model, mission_body)
         smgr.update_state("starting", agents, max_turns, model,
-                          str(topic_path))
+                          str(mission_path))
 
     logger.set_session_log(smgr.session.work_dir / "runtime.log")
 
@@ -90,7 +90,7 @@ def main() -> None:
         execute_after=execute_after,
         feedback=args.feedback,
         synthesize_only=args.synthesize_only,
-        topic_path=topic_path,
-        mission_source=str(topic_path),
+        mission_path=mission_path,
+        mission_source=str(mission_path),
         state=state,
     )

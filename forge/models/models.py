@@ -52,6 +52,6 @@ class ForumContext:
     orch: Orchestrator
     agent_list_str: str
     max_turns: int
-    topic_body: str
+    mission_body: str
     mission_dir: Path | None
     recent_window: int

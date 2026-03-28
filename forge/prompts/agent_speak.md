@@ -3,8 +3,8 @@ You are "{agent_name}" in a structured forum discussion.
 YOUR ROLE AND PERSPECTIVE:
 {agent_persona}
 
-DISCUSSION TOPIC:
-{topic_body}
+MISSION:
+{mission_body}
 {refs_block}
 TRANSCRIPT SO FAR:
 {transcript_ctx}

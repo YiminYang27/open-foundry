@@ -19,7 +19,7 @@ class SynthesisService:
         self._smgr = smgr
         self._role_store = role_store
 
-    def synthesize(self, topic_body: str) -> None:
+    def synthesize(self, mission_body: str) -> None:
         session = self._smgr.session
 
         print(f"\n{BOLD}--- Synthesizing reference document ---{NC}")
@@ -52,7 +52,7 @@ class SynthesisService:
 
         synth_prompt = load_template("synthesize",
                                       synth_persona=synth_persona,
-                                      topic_body=topic_body,
+                                      mission_body=mission_body,
                                       notes_dir=session.notes_dir,
                                       notes_inventory=notes_inventory,
                                       transcript_path=session.transcript,

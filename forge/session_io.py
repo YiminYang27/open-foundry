@@ -28,9 +28,9 @@ class SessionManager:
     # -------------------------------------------------------------------
 
     @classmethod
-    def create(cls, project_root: Path, slug: str, topic_path: Path,
+    def create(cls, project_root: Path, slug: str, mission_path: Path,
                agents: list[Agent], title: str, max_turns: int,
-               model: str, topic_body: str) -> "SessionManager":
+               model: str, mission_body: str) -> "SessionManager":
         """Create session directory, transcript, notes dirs, MISSION.md copy."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         sessions_dir = project_root / "sessions"
@@ -39,8 +39,8 @@ class SessionManager:
 
         # Store a pointer to the mission source instead of copying.
         (work_dir / "MISSION.md").write_text(
-            f"<!-- source: {topic_path} -->\n"
-            + topic_path.read_text(encoding="utf-8"),
+            f"<!-- source: {mission_path} -->\n"
+            + mission_path.read_text(encoding="utf-8"),
             encoding="utf-8",
         )
 
@@ -78,7 +78,7 @@ class SessionManager:
             f"> Agents: {agents_str}\n"
             f"> Max turns: {max_turns}\n"
             f"> Model: {model}\n\n"
-            f"## Topic\n{topic_body}\n\n"
+            f"## Mission\n{mission_body}\n\n"
             f"## Discussion\n\n",
             encoding="utf-8",
         )

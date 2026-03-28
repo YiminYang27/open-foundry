@@ -38,7 +38,7 @@ class ForumWorkflow:
     def run(self, *, execute_after: bool = False,
             feedback: str | None = None,
             synthesize_only: bool = False,
-            topic_path: Path,
+            mission_path: Path,
             mission_source: str,
             state: dict | None = None) -> None:
         """Run the full discussion pipeline.
@@ -119,7 +119,7 @@ class ForumWorkflow:
                 logger.info("closing.md missing, running finalize + synthesis")
                 self._orch_svc.finalize(ctx, "unknown (synthesize-only mode)")
 
-            self._synth_svc.synthesize(ctx.topic_body)
+            self._synth_svc.synthesize(ctx.mission_body)
             if not llm.dry_run:
                 self._synth_svc.review()
 
@@ -137,13 +137,13 @@ class ForumWorkflow:
         self._run_discussion_loop(
             _save_state=_save_state,
             execute_after=execute_after,
-            topic_path=topic_path,
+            mission_path=mission_path,
             mission_source=mission_source,
             llm=llm,
         )
 
     def _run_discussion_loop(self, *, _save_state, execute_after,
-                              topic_path, mission_source, llm) -> None:
+                              mission_path, mission_source, llm) -> None:
         session = self._smgr.session
         ctx = self._ctx
         agent_names_set = {a.name for a in ctx.agents}
@@ -166,7 +166,7 @@ class ForumWorkflow:
                     _save_state=_save_state,
                     consensus_status="yes",
                     execute_after=execute_after,
-                    topic_path=topic_path,
+                    mission_path=mission_path,
                     mission_source=mission_source,
                     llm=llm,
                 )
@@ -293,7 +293,7 @@ class ForumWorkflow:
             _save_state=_save_state,
             consensus_status="no (max turns reached)",
             execute_after=execute_after,
-            topic_path=topic_path,
+            mission_path=mission_path,
             mission_source=mission_source,
             llm=llm,
         )
@@ -306,7 +306,7 @@ class ForumWorkflow:
             logger.info(f"Synthesis: {synthesis}")
 
     def _finalize_and_synthesize(self, *, _save_state, consensus_status,
-                                  execute_after, topic_path,
+                                  execute_after, mission_path,
                                   mission_source, llm) -> None:
         """Run the post-discussion pipeline: finalize -> execute -> synthesize -> review."""
         ctx = self._ctx
@@ -314,7 +314,7 @@ class ForumWorkflow:
         self._orch_svc.finalize(ctx, consensus_status)
         if execute_after:
             self._orch_svc.run_execution_phase(ctx, self._agent_svc)
-        self._synth_svc.synthesize(ctx.topic_body)
+        self._synth_svc.synthesize(ctx.mission_body)
         if not llm.dry_run:
             self._synth_svc.review()
 

@@ -4,7 +4,7 @@ YOUR ROLE AND EXPERTISE:
 {agent_persona}
 
 MISSION CONTEXT:
-{topic_body}
+{mission_body}
 {refs_block}
 YOUR TASK:
 {task_desc}
