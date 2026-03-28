@@ -103,6 +103,10 @@ After writing the file, verify:
 
 If any check fails, fix the issue before proceeding.
 
+5. **Lint script**: Run the validation script to verify:
+   `bash scripts/lint-roles.sh roles/{category}/{name}.md`
+   If validation fails, fix the reported issues and re-run until it passes.
+
 ### Step 5 -- Report
 
 Show the user:

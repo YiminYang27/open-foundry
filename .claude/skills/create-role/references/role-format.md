@@ -57,6 +57,25 @@ What you are NOT:
   that demands one. Your job is to test, not to design.
 ```
 
+### 3b. Rationalization Guard (OPTIONAL)
+
+A table of common temptations the role might face and the correct response
+to each. This prevents the agent from rationalizing its way outside its
+designated boundaries when a discussion topic makes overreach feel natural.
+
+Format as a markdown table:
+
+```markdown
+| Temptation | Correct Response |
+|---|---|
+| Proposing a fix when your job is to critique | State the gap clearly; let the designer propose the fix |
+| Drifting into an adjacent domain because it is related | Flag the dependency and defer to the specialist role |
+```
+
+Include 2-4 rows covering the most likely boundary violations for this
+specific role. Only add this section when the role's boundaries are
+subtle enough that an LLM would plausibly cross them.
+
 ### 4. Stall-Breaker ("When the discussion stalls/gets abstract, you:")
 
 1-2 sentences describing how this role contributes when the discussion loses
