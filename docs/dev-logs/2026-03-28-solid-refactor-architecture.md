@@ -62,158 +62,380 @@ SessionManager      ---uses--> Session (dataclass), Logger
 
 ---
 
-## 2. Code Flow
+## 2. Code Flow -- Step-by-Step Walkthrough
 
-### Step 1: Bootstrap (app.py::main)
+Tracing `./scripts/forge.py ai-code-review --model haiku --max-turns 5`
+through every file and function call.
 
-```
-main()
-  |-- utils/cli.parse_args()              # argparse -> Namespace
-  |-- utils/cli.resolve_paths(args)       # -> (project_root, mission_path, resume_dir)
-  |
-  |-- roles.parse_mission(mission_path)   # parse MISSION.md frontmatter + body
-  |                                       # -> (agent_names, max_turns, model, orch_name,
-  |                                       #     title, mission_body, execute_after)
-  |
-  |-- LLMProviderFactory.create("claude-cli", model, dry_run)  # LLM provider
-  |-- RoleStore(project_root / "roles")   # construct role loader
-  |     |-- .get_agent(name) x N          # load each agent .md -> Agent
-  |     +-- .get_orchestrator(orch_name)  # load orchestrator .md -> Orchestrator
-  |
-  |-- ForumContext(agents, orch, ...)      # aggregate shared params
-  |
-  |-- [new]    SessionManager.create(project_root, slug, mission_path, ...)
-  |              -> creates work_dir, transcript.md, notes/, utterances/
-  |-- [resume] SessionManager.resume(work_dir, agents)
-  |              -> loads state.json, rebuilds speakers_history
-  |
-  |-- AgentService(llm: LLMProvider, smgr)
-  |-- OrchestratorService(llm: LLMProvider, smgr)
-  |-- SynthesisService(llm: LLMProvider, smgr, role_store)
-  |
-  |-- ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
-  +-- workflow.run(execute_after, feedback, synthesize_only, ...)
-```
-
-### Step 2: Pipeline Entry (ForumWorkflow.run)
+### Step 1: Entry
 
 ```
-workflow.run(...)
-  |
-  |-- [if resume + completed + feedback]
-  |     smgr.archive_outputs()            # rename closing.md, synthesis.md
-  |
-  |-- register signal handlers (SIGINT -> graceful exit, SIGQUIT -> pause)
-  |-- print banner (topic, agents, model, output dir)
-  |
-  |-- [if feedback]
-  |     smgr.inject_operator_turn(feedback)
-  |     smgr.update_state("running")
-  |
-  |-- [if synthesize_only] -----> Step 5 (shortcut)
-  |
-  +-- _run_discussion_loop()  -----> Step 3
+scripts/forge.py:6    sys.path.insert(0, project_root)
+scripts/forge.py:7    from forge import main
+scripts/forge.py:9    main()
 ```
 
-### Step 3: Discussion Loop (ForumWorkflow._run_discussion_loop)
+`forge/__init__.py:3` re-exports `main` from `forge.app`.
 
-Each turn repeats this cycle:
-
-```
-while session.utterances < ctx.max_turns:
-  |
-  |-- orch_svc.pick_speaker(ctx)
-  |     |-- smgr.get_transcript_context(recent_turns)
-  |     |-- load_template("orchestrator_pick", stats, signals, transcript...)
-  |     |-- llm.complete(prompt)
-  |     +-- extract_json(raw) -> {"speaker", "action", "reasoning"}
-  |
-  |-- smgr.append_orchestrator_turn(pick_result)
-  |
-  |-- [CONSENSUS] -----> Step 4
-  |-- [FALLBACK]  OrchestratorService.next_round_robin(agents, last)
-  |-- [3x repeat] OrchestratorService.next_round_robin(agents, speaker)
-  |
-  |-- [speak]
-  |     agent_svc.speak(agent, ctx)
-  |       |-- smgr.get_transcript_context(recent_turns)
-  |       |-- load_template("agent_speak", persona, mission, transcript...)
-  |       +-- llm.complete(prompt)
-  |
-  |-- [execute]
-  |     agent_svc.execute(agent, ctx, task)
-  |       |-- smgr.get_transcript_context(recent_turns)
-  |       |-- load_template("agent_execute", persona, task, handoff...)
-  |       +-- llm.complete(prompt)
-  |
-  |-- smgr.append_agent_turn(speaker, response, action, task)
-  |-- session.utterances += 1
-  |
-  |-- [speak] AgentService.parse_status_signal(response)
-  |             -> session.agent_statuses[speaker] = signal
-  |
-  |-- [execute + verify_persona] VERIFY LOOP (max 3):
-  |     |-- orch_svc.verify_task(ctx, task, response)
-  |     |     |-- load_template("verify_task", persona, task, response...)
-  |     |     +-- llm.complete(prompt) -> extract_json -> {"status", "details"}
-  |     |-- smgr.append_verification(turn_label, status, details)
-  |     |-- [pass] break
-  |     +-- [fail + retries left]
-  |           agent_svc.execute(agent, ctx, retry_task)
-  |           smgr.append_retry_turn(speaker, response, retry_num, task)
-  |
-  |-- smgr.update_state("running")
-  |
-  |-- [pause check]
-  |     _check_pause() -> SIGQUIT flag or PAUSE file
-  |     smgr.inject_operator_turn(msg)
-  |
-  +-- next turn
-```
-
-### Step 4: Post-Discussion (ForumWorkflow._finalize_and_synthesize)
-
-Triggered by consensus OR max turns:
+### Step 2: CLI Parsing (app.py:17 -> utils/cli.py)
 
 ```
-_finalize_and_synthesize(consensus_status, ...)
-  |
-  |-- smgr.update_state("completed")
-  |
-  |-- orch_svc.finalize(ctx, consensus_status)
-  |     |-- smgr.truncate_transcript_for_closing()
-  |     |-- load_template("finalize", persona, truncated_transcript)
-  |     |-- llm.complete(prompt) -> closing summary text
-  |     +-- write closing.md (summary + speaker breakdown + stats)
-  |
-  |-- [if execute_after]
-  |     orch_svc.run_execution_phase(ctx, agent_svc)
-  |       |-- load_template("task_decompose", persona, closing, agents)
-  |       |-- llm.complete(prompt) -> extract_json -> {"tasks": [...]}
-  |       +-- for each task:
-  |             agent_svc.execute(agent, ctx, task_def)
-  |             orch_svc.verify_task(ctx, task_def, response)
-  |             [retry loop up to 3x]
-  |
-  |-- synth_svc.synthesize(mission_body)
-  |     |-- role_store.get_synthesizer_persona()
-  |     |-- load_template("synthesize", persona, notes, transcript, closing...)
-  |     +-- llm.stream(prompt)  # streaming, writes synthesis.md directly
-  |
-  +-- synth_svc.review()
-        |-- load_template("synthesis_review", transcript, closing, synthesis)
-        |-- llm.complete(prompt) -> extract_json -> {"status", "issues"}
-        +-- write review.json
+app.py:18     args = parse_args()
 ```
 
-### Step 5: Synthesize-Only (shortcut)
+`utils/cli.py:35 parse_args()` -- builds argparse parser, returns Namespace
+with: `args.mission="ai-code-review"`, `args.model="haiku"`,
+`args.max_turns=5`, `args.dry_run=False`, `args.resume=None`,
+`args.feedback=None`, `args.synthesize_only=False`.
 
 ```
-[synthesize_only = True]
-  |-- [if no closing.md] orch_svc.finalize(ctx, "unknown")
-  |-- synth_svc.synthesize(mission_body)
-  +-- synth_svc.review()
+app.py:25     project_root, mission_path, resume_dir = resolve_paths(args)
 ```
+
+`utils/cli.py:62 resolve_paths()`:
+- Walks up from `forge/utils/` to find `CLAUDE.md` -> `project_root`
+- Tries `missions/ai-code-review` -> finds directory
+- Appends `MISSION.md` -> `mission_path = missions/ai-code-review/MISSION.md`
+- `resume_dir = None`
+
+### Step 3: Mission Parsing (app.py:32 -> roles/roles.py)
+
+```
+app.py:33     (agent_names, max_turns, model, orch_name, title,
+               mission_body, execute_after) = parse_mission(mission_path)
+```
+
+`roles/roles.py:30 parse_mission()`:
+- Calls `utils/parsers.py:30 parse_frontmatter()` -- regex extracts YAML
+  frontmatter (`---\n...\n---`) and body
+- Parses frontmatter lines: `- role: system_architect`, `max_turns: 30`, etc.
+- Extracts title from first `# ` heading in body
+- Returns 7 values; CLI overrides applied at app.py:39-42
+
+### Step 4: Dependency Construction (app.py:47-88)
+
+```
+app.py:48     role_store = RoleStore(project_root / "roles")
+app.py:49     llm = LLMProviderFactory.create("claude-cli", model="haiku", dry_run=False)
+```
+
+`llm/llm_provider_factory.py:14 create()`:
+- Matches `"claude-cli"` -> imports `ClaudeCLI` from `llm/claude_cli.py`
+- Returns `ClaudeCLI(model="haiku", skip_perms=True, dry_run=False)`
+- Return type is `LLMProvider` (the ABC)
+
+```
+app.py:52     agents = [role_store.get_agent(name) for name in agent_names]
+```
+
+`roles/roles.py:79 RoleStore.get_agent("system_architect")`:
+- Searches `roles/` recursively for `system_architect.md`
+- Calls `parse_frontmatter()` -> extracts `expertise:` from frontmatter
+- Returns `Agent(name="system_architect", expertise="...", persona="...")`
+- Repeated for each agent in the mission roster
+
+```
+app.py:55     orch = role_store.get_orchestrator("default")
+```
+
+`roles/roles.py:99 RoleStore.get_orchestrator("default")`:
+- Reads `roles/orchestrator/default.md`
+- Splits body by `## ` headers -> extracts Speaker Selection, Closing
+  Summary, Verification sections
+- Returns `Orchestrator(name, pick_persona, close_persona, verify_persona)`
+
+```
+app.py:58     ctx = ForumContext(agents, orch, agent_list_str, max_turns=5,
+                                 mission_body, mission_dir, recent_window=10)
+```
+
+`models/models.py:48 ForumContext` -- immutable dataclass aggregating all
+shared discussion parameters.
+
+### Step 5: Session Setup (app.py:68-78)
+
+```
+app.py:75     smgr = SessionManager.create(project_root, "ai-code-review",
+                                            mission_path, agents, title, 5, "haiku", mission_body)
+```
+
+`session_io.py:30 SessionManager.create()`:
+- Creates `sessions/ai-code-review-20260328-HHMMSS/`
+- Writes `MISSION.md` (copy with source comment)
+- Creates `transcript.md` with header (title, agents, model, date)
+- Creates `utterances/`, `notes/{agent}/`, `notes/_operator/`
+- Touches `orchestrator.log`
+- Returns `SessionManager(session)` wrapping the `Session` dataclass
+
+```
+app.py:77     smgr.update_state("starting", agents, 5, "haiku", str(mission_path))
+```
+
+`session_io.py:137 SessionManager.update_state()`:
+- Writes `state.json` with utterances=0, status="starting", agents list
+
+### Step 6: Service Wiring (app.py:82-88)
+
+```
+app.py:83     agent_svc  = AgentService(llm, smgr)
+app.py:84     orch_svc   = OrchestratorService(llm, smgr)
+app.py:85     synth_svc  = SynthesisService(llm, smgr, role_store)
+app.py:88     workflow    = ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
+```
+
+Each service stores references to `llm: LLMProvider` and `smgr: SessionManager`.
+No service knows about concrete `ClaudeCLI` -- all typed against `LLMProvider`.
+
+### Step 7: Pipeline Start (app.py:89 -> workflow.py:41)
+
+```
+app.py:89     workflow.run(execute_after=False, feedback=None,
+                           synthesize_only=False, mission_path=..., ...)
+```
+
+`workflow.py:41 ForumWorkflow.run()`:
+- Lines 61-74: Check if resuming completed session (not applicable here)
+- Lines 84-89: Register signal handlers (SIGINT -> graceful exit,
+  SIGQUIT -> pause)
+- Lines 91-104: Print banner (title, agents, max turns, model, output dir)
+- Lines 107-109: Feedback injection (skipped, feedback=None)
+- Lines 112-135: Synthesize-only mode (skipped)
+- Line 140: `self._run_discussion_loop(...)`
+
+### Step 8: Discussion Loop -- Turn 1 (workflow.py:148)
+
+```
+workflow.py:154   while session.utterances < 5:     # utterances=0, enters loop
+workflow.py:158       pick_result = self._orch_svc.pick_speaker(ctx)
+```
+
+`orchestrator.py:32 OrchestratorService.pick_speaker(ctx)`:
+- Line 35: `smgr.get_transcript_context(recent_turns=10)` -- reads
+  transcript.md, returns full content (< 10 turns)
+- Lines 39-43: Build speaker stats from `session.speakers_history`
+  (empty on turn 1)
+- Lines 46-63: Build recent decisions from `orchestrator.log`
+  (empty on turn 1)
+- Lines 66-74: Build action block (if orchestrator has verify_persona)
+- Lines 77-91: Build agent status signals (empty on turn 1)
+- Lines 93-102: `load_template("orchestrator_pick", ...)` -- loads
+  `prompts/orchestrator_pick.md`, substitutes all `{variables}`
+- Line 104: `llm.complete(prompt, label="Orchestrator", timeout=120)`
+
+`llm/claude_cli.py:30 ClaudeCLI.complete()`:
+- Builds cmd: `['claude', '-p', '-', '--model', 'haiku',
+  '--dangerously-skip-permissions']`
+- `subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+  timeout=120, start_new_session=True)`
+- Returns `result.stdout.strip()`
+
+Back in `pick_speaker`:
+- Line 111: `extract_json(raw)` (`utils/parsers.py:8`) -- parses JSON from
+  LLM response, handles markdown fences
+- Lines 114-115: Appends JSON to `orchestrator.log`
+- Returns e.g. `{"speaker": "critical_analyst", "action": "speak",
+  "reasoning": "..."}`
+
+```
+workflow.py:159   self._smgr.append_orchestrator_turn(pick_result)
+```
+
+`session_io.py:195 SessionManager.append_orchestrator_turn()`:
+- Writes `utterances/HHMMSS-host.md` with speaker, action, reasoning
+
+```
+workflow.py:161   speaker = "critical_analyst"
+workflow.py:163   action = "speak"
+```
+
+Lines 166-182: Not CONSENSUS, skip.
+Lines 185-192: Not FALLBACK, skip.
+Lines 195-203: Anti-loop guard check (consecutive_count=1, ok).
+
+```
+workflow.py:215   response = self._agent_svc.speak(agent, ctx)
+```
+
+`agents.py:36 AgentService.speak(agent, ctx)`:
+- Line 39: `smgr.get_transcript_context(recent_turns=10)`
+- Lines 42-50: Build refs_block (check for `references/` dir in mission)
+- Lines 52-60: `load_template("agent_speak", ...)` -- substitutes agent
+  persona, mission body, transcript, notes_dir, turn/max info
+- Line 62: `llm.complete(prompt, label="Agent critical_analyst")`
+  -> Claude CLI subprocess -> returns agent response text
+
+```
+workflow.py:220   self._smgr.append_agent_turn("critical_analyst", response, "speak")
+```
+
+`session_io.py:172 SessionManager.append_agent_turn()`:
+- Writes `utterances/HHMMSS-critical_analyst.md`
+- Appends to `transcript.md`:
+  `### Turn 1 -- critical_analyst [HH:MM]\n{response}\n\n---\n\n`
+
+```
+workflow.py:222   session.utterances += 1       # now 1
+workflow.py:223   session.last_speaker = "critical_analyst"
+workflow.py:224   session.speakers_history.append("critical_analyst")
+workflow.py:228   session.agent_statuses["critical_analyst"] = AgentService.parse_status_signal(response)
+```
+
+`agents.py:19 AgentService.parse_status_signal()` (static):
+- Scans last lines of response for `[ANALYSIS_COMPLETE]`,
+  `[NEEDS_DATA:...]`, etc.
+- Returns e.g. `{"signal": "NONE"}`
+
+```
+workflow.py:269   _save_state("running")
+```
+
+`session_io.py:137 SessionManager.update_state()`:
+- Writes `state.json` with utterances=1, status="running"
+
+```
+workflow.py:275   # pause check (skipped, no SIGQUIT, no PAUSE file)
+```
+
+**Turn 1 complete.** Loop repeats for turns 2-5.
+
+### Step 9: Consensus or Max Turns
+
+**If orchestrator returns `speaker="CONSENSUS"`** (workflow.py:166):
+
+```
+workflow.py:167   logger.ok("Consensus reached: ...")
+workflow.py:168   self._finalize_and_synthesize(consensus_status="yes", ...)
+```
+
+-> Jump to Step 10.
+
+**If max turns reached** (workflow.py:293, loop exits naturally):
+
+```
+workflow.py:294   logger.warn("Max turns (5) reached without consensus")
+workflow.py:295   self._finalize_and_synthesize(consensus_status="no (max turns reached)", ...)
+```
+
+-> Jump to Step 10.
+
+### Step 10: Finalize (workflow.py:311 -> orchestrator.py:144)
+
+```
+workflow.py:316   _save_state("completed")
+workflow.py:317   self._orch_svc.finalize(ctx, "yes")
+```
+
+`orchestrator.py:144 OrchestratorService.finalize(ctx, "yes")`:
+- Line 147: Read full transcript, count speakers from `### Turn` headers
+- Line 160: `smgr.truncate_transcript_for_closing(keep_recent=15)`
+  (`session_io.py:267`) -- keeps header + each agent's last turn + recent
+  15 turns
+- Line 162: `load_template("finalize", close_persona, truncated)`
+- Line 166: `llm.complete(prompt)` -> Claude generates closing summary
+- Lines 171-182: Write `closing.md` with summary + statistics (total turns,
+  speaker breakdown, consensus status, model, timestamp)
+
+### Step 11: Execution Phase (optional, workflow.py:318)
+
+Only if `execute_after=True` in MISSION.md:
+
+```
+workflow.py:319   self._orch_svc.run_execution_phase(ctx, self._agent_svc)
+```
+
+`orchestrator.py:186 OrchestratorService.run_execution_phase(ctx, agent_svc)`:
+- Line 201: Read `closing.md`
+- Line 202: `load_template("task_decompose", ...)` -- asks LLM to decompose
+  conclusions into executable tasks
+- Line 207: `llm.complete(prompt)` -> `extract_json()` ->
+  `{"tasks": [{"agent": "...", "task": "...", "verify": "..."}, ...]}`
+- Lines 225-275: For each task:
+  - `agent_svc.execute(agent, ctx, task_def)` -- agent implements
+  - `self.verify_task(ctx, task_def, response)` -- orchestrator verifies
+  - If fail: append failure to task, retry (up to 3x)
+
+### Step 12: Synthesize (workflow.py:320 -> synthesis.py:22)
+
+```
+workflow.py:320   self._synth_svc.synthesize(ctx.mission_body)
+```
+
+`synthesis.py:22 SynthesisService.synthesize(mission_body)`:
+- Line 27: `role_store.get_synthesizer_persona()` -> loads
+  `roles/general/synthesizer.md`
+- Lines 35-40: Build notes inventory (list files in `notes/` with sizes)
+- Lines 43-51: Check for archived synthesis (from `--feedback` runs)
+- Lines 53-61: `load_template("synthesize", persona, notes, transcript,
+  closing, prev_synthesis, synthesis_file)`
+- Line 69: `llm.stream(prompt, timeout=1800, max_retries=1)`
+
+`llm/claude_cli.py:69 ClaudeCLI.stream()`:
+- `subprocess.run(['claude', '-p', '-', '--model', 'haiku',
+  '--dangerously-skip-permissions'], input=prompt, capture_output=False,
+  text=True, timeout=1800, start_new_session=True)`
+- `capture_output=False` lets user see live progress
+- Synthesizer uses Claude's file tools to write `synthesis.md` directly
+- Returns exit code (0 = success)
+
+Back in `synthesize()`:
+- Lines 71-84: If stream failed, retry up to 3x with partial backup
+- Lines 91-95: Log line count of produced synthesis
+
+### Step 13: Review (workflow.py:321 -> synthesis.py:97)
+
+```
+workflow.py:321   if not llm.dry_run:
+workflow.py:322       self._synth_svc.review()
+```
+
+`synthesis.py:97 SynthesisService.review()`:
+- Lines 100-103: Check synthesis.md and closing.md exist
+- Line 108: `load_template("synthesis_review", transcript_path,
+  closing_path, synthesis_path)`
+- Line 113: `llm.complete(prompt, timeout=600)` -- reviewer reads all three
+  files and checks for evidence gaps, fabrication, missing dissent
+- Line 118: `extract_json(raw)` -> `{"status": "APPROVED"|"ISSUES_FOUND",
+  "issues": [...]}`
+- Lines 120-121: Write `review.json`
+- Lines 124-131: Log approval or list issues
+
+### Step 14: Done (workflow.py:176-182 or 304-309)
+
+```
+workflow.py:176   print("=== Forum Complete (consensus at turn 4) ===")
+workflow.py:178   logger.info(f"Transcript: {session.transcript}")
+workflow.py:180   logger.info(f"Synthesis: {synthesis}")
+```
+
+Control returns to `app.py:89 workflow.run()` -> `main()` exits.
+
+### Shortcut: Synthesize-Only Mode
+
+When invoked with `--resume <session> --synthesize-only`:
+
+```
+workflow.py:112   if synthesize_only:
+workflow.py:118       if closing_file.exists():  # skip finalize
+workflow.py:122       else: self._orch_svc.finalize(ctx, "unknown")
+workflow.py:125       self._synth_svc.synthesize(ctx.mission_body)   # Step 12
+workflow.py:127       self._synth_svc.review()                       # Step 13
+workflow.py:135       return
+```
+
+### Shortcut: Feedback Mode
+
+When invoked with `--resume <session> --feedback "add examples"`:
+
+```
+workflow.py:62    if feedback and state.status == "completed":
+workflow.py:63        self._smgr.archive_outputs()     # rename closing.md -> closing-TS.md
+workflow.py:107   if feedback:
+workflow.py:108       self._smgr.inject_operator_turn(feedback)  # insert as Turn N
+workflow.py:109       _save_state("running")
+```
+
+Then enters main loop normally (Step 8), with the feedback visible in
+transcript for the next orchestrator pick.
 
 ---
 
