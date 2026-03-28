@@ -5,10 +5,13 @@ import shutil
 from forge.llm import ClaudeCLI
 from forge.models import ForumContext
 from forge.roles import RoleStore, parse_mission
-from forge.session_io import create_session, resume_session, update_state
+from forge.session_io import SessionManager
+from forge.agents import AgentService
+from forge.orchestrator import OrchestratorService
+from forge.synthesis import SynthesisService
 from forge.utils.cli import parse_args, resolve_paths
 from forge.utils.logger import logger
-from forge.workflow import run_forum
+from forge.workflow import ForumWorkflow
 
 
 def main() -> None:
@@ -65,22 +68,29 @@ def main() -> None:
     # Session setup
     state = None
     if resume_dir:
-        session, state = resume_session(resume_dir, agents)
+        smgr, state = SessionManager.resume(resume_dir, agents)
     else:
         slug = (topic_path.parent.name if topic_path.name == "MISSION.md"
                 else topic_path.stem)
-        session = create_session(project_root, slug, topic_path,
-                                 agents, title, max_turns, model, topic_body)
-        update_state(session, "starting", agents, max_turns, model,
-                     str(topic_path))
+        smgr = SessionManager.create(project_root, slug, topic_path,
+                                     agents, title, max_turns, model, topic_body)
+        smgr.update_state("starting", agents, max_turns, model,
+                          str(topic_path))
 
-    logger.set_session_log(session.work_dir / "runtime.log")
+    logger.set_session_log(smgr.session.work_dir / "runtime.log")
 
-    # Run pipeline
-    run_forum(session, ctx, llm, role_store,
-              execute_after=execute_after,
-              feedback=args.feedback,
-              synthesize_only=args.synthesize_only,
-              topic_path=topic_path,
-              mission_source=str(topic_path),
-              state=state)
+    # Build services
+    agent_svc = AgentService(llm, smgr)
+    orch_svc = OrchestratorService(llm, smgr)
+    synth_svc = SynthesisService(llm, smgr, role_store)
+
+    # Build and run workflow
+    workflow = ForumWorkflow(smgr, ctx, orch_svc, agent_svc, synth_svc)
+    workflow.run(
+        execute_after=execute_after,
+        feedback=args.feedback,
+        synthesize_only=args.synthesize_only,
+        topic_path=topic_path,
+        mission_source=str(topic_path),
+        state=state,
+    )
