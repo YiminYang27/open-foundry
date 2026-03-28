@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from forge.log import info, warn, ok
+from forge.utils.logger import info, warn, ok
 from forge.models import Agent, Session
 
 

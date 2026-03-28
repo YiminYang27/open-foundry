@@ -26,11 +26,12 @@ open-foundry/
   forge/                Python package (the orchestrator engine)
     __init__.py         Package entry point, exports main()
     cli.py              Workflow orchestration + CLI entry point
-    models.py           Data classes: Agent, Orchestrator, Session
-    log.py              Logging helpers + color constants
-    roles.py            RoleStore: role/mission file loading
-    llm.py              LLMProvider protocol + ClaudeCLI implementation
     session_io.py       Session I/O: transcript, state, utterances
+    models/             Data classes: Agent, Orchestrator, Session
+    utils/              Shared utilities
+      logger.py         Logging helpers + color constants
+    roles/              RoleStore: role/mission file loading
+    llm/                LLMProvider protocol + ClaudeCLI implementation
     prompts/            Externalized prompt templates (.md files)
   scripts/              Entry points (forge.py wrapper)
   .claude/skills/       Agent Skills for guided creation workflows

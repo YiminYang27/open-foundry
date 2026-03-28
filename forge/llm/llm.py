@@ -10,7 +10,7 @@ import subprocess
 import time
 from typing import Protocol
 
-from forge.log import info, warn
+from forge.utils.logger import info, warn
 
 
 # ---------------------------------------------------------------------------

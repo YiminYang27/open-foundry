@@ -7,7 +7,7 @@ from the roles/ directory, and parse_mission() for parsing MISSION.md files.
 import re
 from pathlib import Path
 
-from forge.log import fatal
+from forge.utils.logger import fatal
 from forge.models import Agent, Orchestrator
 
 

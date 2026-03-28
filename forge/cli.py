@@ -44,8 +44,8 @@ import termios
 from datetime import datetime
 from pathlib import Path
 
-from forge.log import (info, ok, warn, fatal, speaker_line,
-                       set_session_log, CYAN, BOLD, NC)
+from forge.utils.logger import (info, ok, warn, fatal, speaker_line,
+                                set_session_log, CYAN, BOLD, NC)
 from forge.models import Agent, Orchestrator, Session
 from forge.prompts import load_template
 from forge.llm import ClaudeCLI, extract_json
