@@ -24,7 +24,12 @@ open-foundry/
   missions/             Mission definitions (MISSION.md + optional references/)
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
   src/
-    forge.py            Main orchestrator implementation
+    forge.py            Workflow orchestration + CLI entry point
+    models.py           Data classes: Agent, Orchestrator, Session
+    log.py              Logging helpers + color constants
+    roles.py            RoleStore: role/mission file loading
+    llm.py              LLMProvider protocol + ClaudeCLI implementation
+    session_io.py       Session I/O: transcript, state, utterances
     prompts/            Externalized prompt templates (.md files)
   scripts/              Entry points (forge.py wrapper)
   .claude/skills/       Agent Skills for guided creation workflows
