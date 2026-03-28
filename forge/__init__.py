@@ -1,5 +1,5 @@
 """open-foundry: multi-agent deliberation framework."""
 
-from forge.cli import main
+from forge.utils.cli import main
 
 __all__ = ["main"]
