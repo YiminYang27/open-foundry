@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from forge.llm import ClaudeCLI
+from forge.llm import LLMProvider
 from forge.utils.parsers import extract_json
 from forge.models import Agent, ForumContext, Orchestrator, Session
 from forge.prompts import load_template
@@ -16,7 +16,7 @@ from forge.utils.logger import logger, BOLD, NC
 class OrchestratorService:
     """Encapsulates orchestrator-driven operations: picking, verification, finalization, execution."""
 
-    def __init__(self, llm: ClaudeCLI, smgr: SessionManager) -> None:
+    def __init__(self, llm: LLMProvider, smgr: SessionManager) -> None:
         self._llm = llm
         self._smgr = smgr
 

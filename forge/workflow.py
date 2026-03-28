@@ -6,6 +6,7 @@ import termios
 from pathlib import Path
 
 from forge.agents import AgentService
+from forge.llm import LLMProvider
 from forge.models import ForumContext, Session
 from forge.orchestrator import OrchestratorService
 from forge.session_io import SessionManager
@@ -27,10 +28,12 @@ class ForumWorkflow:
     """Orchestrates the full discussion pipeline."""
 
     def __init__(self, smgr: SessionManager, ctx: ForumContext,
+                 llm: LLMProvider,
                  orch_svc: OrchestratorService, agent_svc: AgentService,
                  synth_svc: SynthesisService) -> None:
         self._smgr = smgr
         self._ctx = ctx
+        self._llm = llm
         self._orch_svc = orch_svc
         self._agent_svc = agent_svc
         self._synth_svc = synth_svc
@@ -48,7 +51,7 @@ class ForumWorkflow:
         """
         session = self._smgr.session
         ctx = self._ctx
-        llm = self._orch_svc._llm  # all services share the same llm
+        llm = self._llm
 
         def _save_state(status: str) -> None:
             self._smgr.update_state(status, ctx.agents, ctx.max_turns,

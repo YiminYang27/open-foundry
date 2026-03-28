@@ -2,7 +2,7 @@
 
 import json
 
-from forge.llm import ClaudeCLI
+from forge.llm import LLMProvider
 from forge.utils.parsers import extract_json
 from forge.models import Session
 from forge.prompts import load_template
@@ -14,7 +14,7 @@ from forge.utils.logger import logger, BOLD, NC
 class SynthesisService:
     """Encapsulates synthesis and review operations."""
 
-    def __init__(self, llm: ClaudeCLI, smgr: SessionManager, role_store: RoleStore) -> None:
+    def __init__(self, llm: LLMProvider, smgr: SessionManager, role_store: RoleStore) -> None:
         self._llm = llm
         self._smgr = smgr
         self._role_store = role_store
@@ -66,25 +66,29 @@ class SynthesisService:
             return
 
         logger.info("Running synthesizer (this may take a few minutes)...")
-        if hasattr(self._llm, 'stream'):
-            synth_timeout = 1800
+        rc = self._llm.stream(synth_prompt, label="Synthesizer",
+                              timeout=1800, max_retries=1)
+        if rc is not None:
+            # Provider supports streaming
             synth_retries = 3
-            logger.info(f"Synthesizer timeout: {synth_timeout}s x {synth_retries} retries")
-            for attempt in range(synth_retries):
-                if attempt > 0 and synthesis_file.exists():
-                    backup = synthesis_file.with_suffix(f".attempt{attempt}.md")
-                    synthesis_file.rename(backup)
-                    logger.info(f"Moved partial synthesis to {backup.name}")
-                rc = self._llm.stream(synth_prompt, label="Synthesizer",
-                                timeout=synth_timeout, max_retries=1)
-                if rc == 0:
-                    break
-                if attempt < synth_retries - 1:
+            logger.info(f"Synthesizer timeout: 1800s x {synth_retries} retries")
+            if rc != 0:
+                # First attempt failed, retry with partial backup
+                for attempt in range(1, synth_retries):
+                    if synthesis_file.exists():
+                        backup = synthesis_file.with_suffix(f".attempt{attempt}.md")
+                        synthesis_file.rename(backup)
+                        logger.info(f"Moved partial synthesis to {backup.name}")
                     logger.info(f"Retrying synthesizer "
-                         f"(attempt {attempt + 2}/{synth_retries})...")
+                                f"(attempt {attempt + 1}/{synth_retries})...")
+                    rc = self._llm.stream(synth_prompt, label="Synthesizer",
+                                          timeout=1800, max_retries=1)
+                    if rc == 0:
+                        break
         else:
+            # Provider does not support streaming, fall back to complete()
             result = self._llm.complete(synth_prompt, label="Synthesizer",
-                                  timeout=1800)
+                                        timeout=1800)
             if result:
                 synthesis_file.write_text(result, encoding="utf-8")
 

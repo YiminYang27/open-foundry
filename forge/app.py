@@ -2,7 +2,7 @@
 
 import shutil
 
-from forge.llm import ClaudeCLI
+from forge.llm import LLMProviderFactory
 from forge.models import ForumContext
 from forge.roles import RoleStore, parse_mission
 from forge.session_io import SessionManager
@@ -46,7 +46,7 @@ def main() -> None:
 
     # Wire dependencies
     role_store = RoleStore(project_root / "roles")
-    llm = ClaudeCLI(model=model, dry_run=args.dry_run)
+    llm = LLMProviderFactory.create("claude-cli", model=model, dry_run=args.dry_run)
 
     logger.info("Validating role files...")
     agents = [role_store.get_agent(name) for name in agent_names]
@@ -85,7 +85,7 @@ def main() -> None:
     synth_svc = SynthesisService(llm, smgr, role_store)
 
     # Build and run workflow
-    workflow = ForumWorkflow(smgr, ctx, orch_svc, agent_svc, synth_svc)
+    workflow = ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
     workflow.run(
         execute_after=execute_after,
         feedback=args.feedback,

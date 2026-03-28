@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from forge.llm import ClaudeCLI
+from forge.llm import LLMProvider
 from forge.models import Agent, ForumContext, Session
 from forge.prompts import load_template
 from forge.session_io import SessionManager
@@ -11,7 +11,7 @@ from forge.session_io import SessionManager
 class AgentService:
     """Encapsulates agent speak and execute operations."""
 
-    def __init__(self, llm: ClaudeCLI, smgr: SessionManager) -> None:
+    def __init__(self, llm: LLMProvider, smgr: SessionManager) -> None:
         self._llm = llm
         self._smgr = smgr
 
