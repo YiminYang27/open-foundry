@@ -23,8 +23,9 @@ open-foundry/
     orchestrator/       Orchestration strategies (default, finance_moderator)
   missions/             Mission definitions (MISSION.md + optional references/)
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
-  src/
-    forge.py            Workflow orchestration + CLI entry point
+  forge/                Python package (the orchestrator engine)
+    __init__.py         Package entry point, exports main()
+    cli.py              Workflow orchestration + CLI entry point
     models.py           Data classes: Agent, Orchestrator, Session
     log.py              Logging helpers + color constants
     roles.py            RoleStore: role/mission file loading

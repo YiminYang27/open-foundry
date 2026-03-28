@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-forge.py -- Multi-agent discussion orchestrator
+forge.cli -- Multi-agent discussion orchestrator
 
 Runs a structured discussion between LLM agents with distinct
 perspectives, moderated by an orchestrator that picks speakers
@@ -44,14 +44,15 @@ import termios
 from datetime import datetime
 from pathlib import Path
 
-from log import (info, ok, warn, fatal, speaker_line,
-                 set_session_log, CYAN, BOLD, NC)
-from models import Agent, Orchestrator, Session
-from prompts import load_template
-from llm import ClaudeCLI, extract_json
-from roles import RoleStore, parse_mission
-from session_io import (get_transcript_context, truncate_transcript_for_closing,
-                        load_state, inject_operator_turn)
+from forge.log import (info, ok, warn, fatal, speaker_line,
+                       set_session_log, CYAN, BOLD, NC)
+from forge.models import Agent, Orchestrator, Session
+from forge.prompts import load_template
+from forge.llm import ClaudeCLI, extract_json
+from forge.roles import RoleStore, parse_mission
+from forge.session_io import (get_transcript_context,
+                              truncate_transcript_for_closing,
+                              load_state, inject_operator_turn)
 
 _pause_requested = False
 
@@ -652,11 +653,11 @@ def main() -> None:
         fatal("--synthesize-only requires --resume to specify the session")
 
     # Resolve paths -- find project root by walking up to the directory
-    # containing CLAUDE.md (works whether invoked from src/ or scripts/).
+    # containing CLAUDE.md (works whether invoked from forge/ or scripts/).
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
     if not (project_root / "CLAUDE.md").exists():
-        # Likely running from src/ -- go one more level up
+        # Likely running from forge/ -- go one more level up
         project_root = project_root.parent
     role_store = RoleStore(project_root / "roles")
 
