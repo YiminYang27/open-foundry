@@ -1,5 +1,5 @@
 """Data models."""
 
-from forge.models.models import Agent, Orchestrator, Session
+from forge.models.models import Agent, ForumContext, Orchestrator, Session
 
-__all__ = ["Agent", "Orchestrator", "Session"]
+__all__ = ["Agent", "ForumContext", "Orchestrator", "Session"]

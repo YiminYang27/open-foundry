@@ -1,5 +1,7 @@
 """Pure data classes for the open-foundry orchestrator."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,3 +43,15 @@ class Session:
             self.interventions = []
         if self.agent_statuses is None:
             self.agent_statuses = {}
+
+
+@dataclass
+class ForumContext:
+    """Aggregates parameters shared across discussion functions."""
+    agents: list[Agent]
+    orch: Orchestrator
+    agent_list_str: str
+    max_turns: int
+    topic_body: str
+    mission_dir: Path | None
+    recent_window: int
