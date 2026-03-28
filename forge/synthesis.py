@@ -2,7 +2,8 @@
 
 import json
 
-from forge.llm import ClaudeCLI, extract_json
+from forge.llm import ClaudeCLI
+from forge.utils.parsers import extract_json
 from forge.models import Session
 from forge.prompts import load_template
 from forge.roles import RoleStore

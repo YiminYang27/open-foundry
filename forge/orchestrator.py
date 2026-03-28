@@ -5,7 +5,8 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from forge.llm import ClaudeCLI, extract_json
+from forge.llm import ClaudeCLI
+from forge.utils.parsers import extract_json
 from forge.models import Agent, ForumContext, Orchestrator, Session
 from forge.prompts import load_template
 from forge.session_io import get_transcript_context, truncate_transcript_for_closing

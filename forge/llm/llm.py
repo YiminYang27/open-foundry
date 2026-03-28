@@ -4,8 +4,6 @@ Defines LLMProvider Protocol (only complete() is required) and
 ClaudeCLI implementation that wraps `claude -p` subprocess calls.
 """
 
-import json
-import re
 import subprocess
 import time
 from typing import Protocol
@@ -136,31 +134,3 @@ class ClaudeCLI:
         return last_rc
 
 
-# ---------------------------------------------------------------------------
-# JSON extraction utility
-# ---------------------------------------------------------------------------
-
-def extract_json(text: str) -> dict:
-    """Try to extract a JSON object from text, handling fences and extra content."""
-    text = text.strip()
-    # Direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    # Markdown fences
-    fenced = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-    if fenced:
-        try:
-            return json.loads(fenced.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    # First JSON object in text
-    match = re.search(r'\{[^{}]*\}', text)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            pass
-    return {"speaker": "FALLBACK",
-            "reasoning": "could not parse orchestrator response"}

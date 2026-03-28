@@ -7,24 +7,9 @@ from the roles/ directory, and parse_mission() for parsing MISSION.md files.
 import re
 from pathlib import Path
 
-from forge.utils.logger import logger
 from forge.models import Agent, Orchestrator
-
-
-# ---------------------------------------------------------------------------
-# Frontmatter parsing
-# NOTE: Manual regex parsing -- only supports flat key:value pairs.
-# Nested YAML, multi-line values, or quoted strings are not handled.
-# This is intentional to avoid a pyyaml dependency (stdlib-only design).
-# ---------------------------------------------------------------------------
-
-def parse_frontmatter(path: Path) -> tuple[str, str]:
-    """Return (frontmatter_text, body_text). Raises ValueError if no frontmatter."""
-    content = path.read_text(encoding="utf-8")
-    match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-    if not match:
-        raise ValueError(f"No YAML frontmatter found in {path}")
-    return match.group(1), content[match.end():]
+from forge.utils.logger import logger
+from forge.utils.parsers import parse_frontmatter
 
 
 def parse_mission(path: Path) -> tuple[list[str], int, str, str, str, str, bool]:
