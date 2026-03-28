@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Color helpers
+# Color constants
 # ---------------------------------------------------------------------------
 
 if sys.stdout.isatty():
@@ -20,27 +20,48 @@ else:
     RED = GREEN = YELLOW = BLUE = CYAN = BOLD = NC = ''
 
 
-_session_log: Path | None = None
+# ---------------------------------------------------------------------------
+# Logger
+# ---------------------------------------------------------------------------
+
+class Logger:
+    """Session-aware logger that writes to both stdout and a session log file."""
+
+    def __init__(self) -> None:
+        self._session_log: Path | None = None
+
+    def set_session_log(self, path: Path | None) -> None:
+        """Set (or clear) the file path used for session-level logging."""
+        self._session_log = path
+
+    def _log_to_file(self, plain_msg: str) -> None:
+        if self._session_log is not None:
+            with open(self._session_log, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().strftime('%H:%M:%S')} {plain_msg}\n")
+
+    def info(self, msg):
+        print(f"{BLUE}[INFO]{NC} {msg}")
+        self._log_to_file(f"[INFO] {msg}")
+
+    def ok(self, msg):
+        print(f"{GREEN}[OK]{NC} {msg}")
+        self._log_to_file(f"[OK] {msg}")
+
+    def warn(self, msg):
+        print(f"{YELLOW}[WARN]{NC} {msg}")
+        self._log_to_file(f"[WARN] {msg}")
+
+    def err(self, msg):
+        print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr)
+        self._log_to_file(f"[ERROR] {msg}")
+
+    def fatal(self, msg):
+        self.err(msg)
+        sys.exit(1)
+
+    def speaker_line(self, name, text):
+        print(f"{CYAN}[{name}]{NC} {text}")
+        self._log_to_file(f"[{name}] {text}")
 
 
-def set_session_log(path: Path | None) -> None:
-    """Set (or clear) the file path used for session-level logging."""
-    global _session_log
-    _session_log = path
-
-
-def _log_to_file(plain_msg: str) -> None:
-    if _session_log is not None:
-        with open(_session_log, "a", encoding="utf-8") as f:
-            f.write(f"{datetime.now().strftime('%H:%M:%S')} {plain_msg}\n")
-
-
-def info(msg):  print(f"{BLUE}[INFO]{NC} {msg}"); _log_to_file(f"[INFO] {msg}")
-def ok(msg):    print(f"{GREEN}[OK]{NC} {msg}"); _log_to_file(f"[OK] {msg}")
-def warn(msg):  print(f"{YELLOW}[WARN]{NC} {msg}"); _log_to_file(f"[WARN] {msg}")
-def err(msg):   print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr); _log_to_file(f"[ERROR] {msg}")
-def fatal(msg): err(msg); sys.exit(1)
-
-
-def speaker_line(name, text):
-    print(f"{CYAN}[{name}]{NC} {text}"); _log_to_file(f"[{name}] {text}")
+logger = Logger()

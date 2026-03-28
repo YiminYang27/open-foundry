@@ -41,7 +41,7 @@ from forge.llm import ClaudeCLI
 from forge.models import ForumContext
 from forge.roles import RoleStore, parse_mission
 from forge.session_io import create_session, resume_session, update_state
-from forge.utils.logger import info, ok, fatal, set_session_log
+from forge.utils.logger import logger
 from forge.workflow import run_forum
 
 
@@ -92,10 +92,10 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     if topic_path.is_dir():
         mission_file = topic_path / "MISSION.md"
         if not mission_file.exists():
-            fatal(f"MISSION.md not found in {topic_path}")
+            logger.fatal(f"MISSION.md not found in {topic_path}")
         topic_path = mission_file
     if not topic_path.exists():
-        fatal(f"Mission not found: {topic_path}")
+        logger.fatal(f"Mission not found: {topic_path}")
 
     resume_dir = None
     if args.resume:
@@ -108,7 +108,7 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
             else:
                 resume_dir = project_root / resume_dir
         if not resume_dir.exists():
-            fatal(f"Resume directory not found: {resume_dir}")
+            logger.fatal(f"Resume directory not found: {resume_dir}")
 
     return project_root, topic_path, resume_dir
 
@@ -117,22 +117,22 @@ def main() -> None:
     args = _parse_args()
 
     if args.feedback and not args.resume:
-        fatal("--feedback requires --resume to specify which session to continue")
+        logger.fatal("--feedback requires --resume to specify which session to continue")
     if args.synthesize_only and not args.resume:
-        fatal("--synthesize-only requires --resume to specify the session")
+        logger.fatal("--synthesize-only requires --resume to specify the session")
 
     project_root, topic_path, resume_dir = _resolve_paths(args)
 
     # Check prerequisites
     if not shutil.which("claude"):
-        fatal("claude CLI not found in PATH")
+        logger.fatal("claude CLI not found in PATH")
 
     # Parse mission
     try:
         (agent_names, max_turns, model, orch_name, title, topic_body,
          execute_after) = parse_mission(topic_path)
     except ValueError as e:
-        fatal(str(e))
+        logger.fatal(str(e))
 
     # Apply CLI overrides
     if args.max_turns is not None:
@@ -141,18 +141,18 @@ def main() -> None:
         model = args.model
 
     if not agent_names:
-        fatal("No agents defined in topic file")
+        logger.fatal("No agents defined in topic file")
 
     # Wire dependencies
     role_store = RoleStore(project_root / "roles")
     llm = ClaudeCLI(model=model, dry_run=args.dry_run)
 
-    info("Validating role files...")
+    logger.info("Validating role files...")
     agents = [role_store.get_agent(name) for name in agent_names]
-    ok(f"All {len(agents)} role files validated")
+    logger.ok(f"All {len(agents)} role files validated")
 
     orch = role_store.get_orchestrator(orch_name)
-    info(f"Orchestrator: {orch_name}")
+    logger.info(f"Orchestrator: {orch_name}")
 
     ctx = ForumContext(
         agents=agents,
@@ -176,7 +176,7 @@ def main() -> None:
         update_state(session, "starting", agents, max_turns, model,
                      str(topic_path))
 
-    set_session_log(session.work_dir / "runtime.log")
+    logger.set_session_log(session.work_dir / "runtime.log")
 
     # Run pipeline
     run_forum(session, ctx, llm, role_store,

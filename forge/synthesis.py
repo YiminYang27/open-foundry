@@ -6,7 +6,7 @@ from forge.llm import ClaudeCLI, extract_json
 from forge.models import Session
 from forge.prompts import load_template
 from forge.roles import RoleStore
-from forge.utils.logger import info, ok, warn, BOLD, NC
+from forge.utils.logger import logger, BOLD, NC
 
 
 def synthesize(session: Session, role_store: RoleStore, topic_body: str,
@@ -15,7 +15,7 @@ def synthesize(session: Session, role_store: RoleStore, topic_body: str,
 
     synth_persona = role_store.get_synthesizer_persona()
     if synth_persona is None:
-        warn("Synthesizer role not found -- skipping synthesis")
+        logger.warn("Synthesizer role not found -- skipping synthesis")
         return
 
     synthesis_file = session.work_dir / "synthesis.md"
@@ -54,22 +54,22 @@ def synthesize(session: Session, role_store: RoleStore, topic_body: str,
         synthesis_file.write_text("[dry run synthesis]\n", encoding="utf-8")
         return
 
-    info("Running synthesizer (this may take a few minutes)...")
+    logger.info("Running synthesizer (this may take a few minutes)...")
     if hasattr(llm, 'stream'):
         synth_timeout = 1800
         synth_retries = 3
-        info(f"Synthesizer timeout: {synth_timeout}s x {synth_retries} retries")
+        logger.info(f"Synthesizer timeout: {synth_timeout}s x {synth_retries} retries")
         for attempt in range(synth_retries):
             if attempt > 0 and synthesis_file.exists():
                 backup = synthesis_file.with_suffix(f".attempt{attempt}.md")
                 synthesis_file.rename(backup)
-                info(f"Moved partial synthesis to {backup.name}")
+                logger.info(f"Moved partial synthesis to {backup.name}")
             rc = llm.stream(synth_prompt, label="Synthesizer",
                             timeout=synth_timeout, max_retries=1)
             if rc == 0:
                 break
             if attempt < synth_retries - 1:
-                info(f"Retrying synthesizer "
+                logger.info(f"Retrying synthesizer "
                      f"(attempt {attempt + 2}/{synth_retries})...")
     else:
         result = llm.complete(synth_prompt, label="Synthesizer",
@@ -79,9 +79,9 @@ def synthesize(session: Session, role_store: RoleStore, topic_body: str,
 
     if synthesis_file.exists():
         lines = len(synthesis_file.read_text(encoding="utf-8").splitlines())
-        ok(f"Synthesis written to {synthesis_file} ({lines} lines)")
+        logger.ok(f"Synthesis written to {synthesis_file} ({lines} lines)")
     else:
-        warn(f"Synthesizer did not produce {synthesis_file}")
+        logger.warn(f"Synthesizer did not produce {synthesis_file}")
 
 
 def review_synthesis(session: Session, llm: ClaudeCLI) -> dict:
@@ -112,11 +112,11 @@ def review_synthesis(session: Session, llm: ClaudeCLI) -> dict:
 
     status = result.get("status", "APPROVED")
     if status == "APPROVED":
-        ok(f"Synthesis approved: {result.get('notes', '')[:100]}")
+        logger.ok(f"Synthesis approved: {result.get('notes', '')[:100]}")
     else:
         issues = result.get("issues", [])
-        warn(f"Synthesis review found {len(issues)} issue(s)")
+        logger.warn(f"Synthesis review found {len(issues)} issue(s)")
         for issue in issues[:5]:
-            warn(f"  [{issue.get('type', '?')}] {issue.get('description', '')[:80]}")
+            logger.warn(f"  [{issue.get('type', '?')}] {issue.get('description', '')[:80]}")
 
     return result

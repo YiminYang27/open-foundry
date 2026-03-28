@@ -9,7 +9,7 @@ from forge.llm import ClaudeCLI, extract_json
 from forge.models import Agent, ForumContext, Orchestrator, Session
 from forge.prompts import load_template
 from forge.session_io import get_transcript_context, truncate_transcript_for_closing
-from forge.utils.logger import info, ok, warn, BOLD, NC
+from forge.utils.logger import logger, BOLD, NC
 
 
 def next_round_robin(agents: list[Agent], last_speaker: str) -> str:
@@ -97,7 +97,7 @@ to discuss, review, or debate."""
     if not raw:
         if llm.dry_run:
             return {"speaker": ctx.agents[0].name, "reasoning": "dry run"}
-        warn("Orchestrator returned empty response")
+        logger.warn("Orchestrator returned empty response")
         return {"speaker": "FALLBACK", "reasoning": "orchestrator failed"}
 
     parsed = extract_json(raw)
@@ -174,7 +174,7 @@ def finalize(session: Session, ctx: ForumContext, llm: ClaudeCLI,
         encoding="utf-8",
     )
 
-    ok(f"Closing summary written to {closing_file}")
+    logger.ok(f"Closing summary written to {closing_file}")
 
 
 def execution_phase(session: Session, ctx: ForumContext,
@@ -185,11 +185,11 @@ def execution_phase(session: Session, ctx: ForumContext,
 
     closing_file = session.work_dir / "closing.md"
     if not closing_file.exists():
-        warn("No closing.md found, skipping execution phase")
+        logger.warn("No closing.md found, skipping execution phase")
         return
 
     if not ctx.orch.verify_persona:
-        warn("Orchestrator has no verification persona, skipping execution phase")
+        logger.warn("Orchestrator has no verification persona, skipping execution phase")
         return
 
     print(f"\n{BOLD}--- Post-Discussion Execution Phase ---{NC}")
@@ -204,16 +204,16 @@ def execution_phase(session: Session, ctx: ForumContext,
     if not raw:
         if llm.dry_run:
             return
-        warn("Task decomposition failed, skipping execution phase")
+        logger.warn("Task decomposition failed, skipping execution phase")
         return
 
     task_list = extract_json(raw)
     tasks = task_list.get("tasks", [])
     if not tasks:
-        warn("No tasks decomposed, skipping execution phase")
+        logger.warn("No tasks decomposed, skipping execution phase")
         return
 
-    info(f"Decomposed {len(tasks)} tasks for execution")
+    logger.info(f"Decomposed {len(tasks)} tasks for execution")
     agent_map = {a.name: a for a in ctx.agents}
     transcript = session.transcript
     max_task_retries = 3
@@ -225,7 +225,7 @@ def execution_phase(session: Session, ctx: ForumContext,
 
         print(f"\n{BOLD}--- Executing task {idx + 1}/{len(tasks)}: "
               f"{agent.name} ---{NC}")
-        info(f"Task: {task_desc[:100]}")
+        logger.info(f"Task: {task_desc[:100]}")
 
         response = agent_execute(session, agent, ctx, task_def, llm)
         if not response:
@@ -255,11 +255,11 @@ def execution_phase(session: Session, ctx: ForumContext,
             )
 
             if v_status == "pass":
-                ok(f"Task {idx + 1} verified: {v_details[:80]}")
+                logger.ok(f"Task {idx + 1} verified: {v_details[:80]}")
                 break
 
             if retry < max_task_retries - 1:
-                warn(f"Task {idx + 1} failed (attempt {retry + 1}/"
+                logger.warn(f"Task {idx + 1} failed (attempt {retry + 1}/"
                      f"{max_task_retries}): {v_details[:80]}")
                 retry_task = dict(task_def)
                 retry_task["task"] = (task_desc
@@ -268,7 +268,7 @@ def execution_phase(session: Session, ctx: ForumContext,
                 response = agent_execute(session, agent, ctx,
                                          retry_task, llm)
             else:
-                warn(f"Task {idx + 1} failed after {max_task_retries} "
+                logger.warn(f"Task {idx + 1} failed after {max_task_retries} "
                      f"attempts: {v_details[:80]}")
 
-    ok("Execution phase complete")
+    logger.ok("Execution phase complete")

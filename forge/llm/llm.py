@@ -10,7 +10,7 @@ import subprocess
 import time
 from typing import Protocol
 
-from forge.utils.logger import info, warn
+from forge.utils.logger import logger
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ class ClaudeCLI:
         Orchestrator calls should override with timeout=120.
         """
         if self._dry_run:
-            info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
+            logger.info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
             return ""
 
         # Pass prompt via stdin to avoid OS ARG_MAX limit on long prompts
@@ -77,7 +77,7 @@ class ClaudeCLI:
                                         text=True, timeout=timeout,
                                         start_new_session=True)
             except subprocess.TimeoutExpired:
-                warn(f"{label} timed out after {timeout}s "
+                logger.warn(f"{label} timed out after {timeout}s "
                      f"(attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
                     time.sleep(2)
@@ -86,11 +86,11 @@ class ClaudeCLI:
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
             if attempt < max_retries - 1:
-                warn(f"{label} call failed (exit {result.returncode}), "
+                logger.warn(f"{label} call failed (exit {result.returncode}), "
                      f"retrying... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(2)
             else:
-                warn(f"{label} call failed after {max_retries} attempts "
+                logger.warn(f"{label} call failed after {max_retries} attempts "
                      f"(exit {result.returncode})")
 
         return ""
@@ -106,7 +106,7 @@ class ClaudeCLI:
         Returns exit code of last attempt.
         """
         if self._dry_run:
-            info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
+            logger.info(f"[DRY RUN] {label} prompt ({len(prompt)} chars)")
             return 0
 
         cmd = ['claude', '-p', '-', '--model', self._model,
@@ -122,14 +122,14 @@ class ClaudeCLI:
                 last_rc = result.returncode
                 if result.returncode == 0:
                     return 0
-                warn(f"{label} exited with code {result.returncode} "
+                logger.warn(f"{label} exited with code {result.returncode} "
                      f"(attempt {attempt + 1}/{max_retries})")
             except subprocess.TimeoutExpired:
                 last_rc = 1
-                warn(f"{label} timed out after {timeout}s "
+                logger.warn(f"{label} timed out after {timeout}s "
                      f"(attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
-                info(f"Retrying {label} "
+                logger.info(f"Retrying {label} "
                      f"(attempt {attempt + 2}/{max_retries})...")
                 time.sleep(5)
 

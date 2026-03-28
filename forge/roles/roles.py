@@ -7,7 +7,7 @@ from the roles/ directory, and parse_mission() for parsing MISSION.md files.
 import re
 from pathlib import Path
 
-from forge.utils.logger import fatal
+from forge.utils.logger import logger
 from forge.models import Agent, Orchestrator
 
 
@@ -82,7 +82,7 @@ class RoleStore:
         if not candidate.exists():
             found = list(self._roles_dir.rglob(f"{name}.md"))
             if not found:
-                fatal(f"Role file not found: {name}.md "
+                logger.fatal(f"Role file not found: {name}.md "
                       f"(searched in {self._roles_dir})")
             candidate = found[0]
 
@@ -100,7 +100,7 @@ class RoleStore:
         """Load orchestrator from roles/orchestrator/{name}.md."""
         orch_file = self._roles_dir / "orchestrator" / f"{name}.md"
         if not orch_file.exists():
-            fatal(f"Orchestrator role not found: {orch_file} "
+            logger.fatal(f"Orchestrator role not found: {orch_file} "
                   f"(referenced as '{name}' in topic)")
 
         try:

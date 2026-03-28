@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from forge.utils.logger import info, warn, ok
+from forge.utils.logger import logger
 from forge.models import Agent, Session
 
 
@@ -48,7 +48,7 @@ def create_session(project_root: Path, slug: str, topic_path: Path,
     pause_sentinel = work_dir / "PAUSE"
     if pause_sentinel.exists():
         pause_sentinel.unlink()
-        warn("Removed leftover PAUSE file from previous session")
+        logger.warn("Removed leftover PAUSE file from previous session")
 
     session = Session(
         work_dir=work_dir,
@@ -116,7 +116,7 @@ def resume_session(work_dir: Path, agents: list[Agent]) -> tuple[Session, dict]:
                     if len(parts) >= 2:
                         session.speakers_history.append(parts[1].split()[0].strip())
 
-    info(f"Resuming at turn {session.utterances + 1}, last speaker: {session.last_speaker}")
+    logger.info(f"Resuming at turn {session.utterances + 1}, last speaker: {session.last_speaker}")
     return session, state
 
 
@@ -149,7 +149,7 @@ def archive_outputs(work_dir: Path) -> str:
             stem = fpath.stem
             archived = fpath.with_name(f"{stem}-{archive_ts}.md")
             fpath.rename(archived)
-            info(f"Archived {fname} -> {archived.name}")
+            logger.info(f"Archived {fname} -> {archived.name}")
     return archive_ts
 
 
@@ -342,4 +342,4 @@ def inject_operator_turn(session: Session, msg: str) -> None:
         "timestamp": datetime.now().isoformat(timespec="seconds"),
     })
 
-    ok(f"Intervention injected as turn {turn_num}")
+    logger.ok(f"Intervention injected as turn {turn_num}")
