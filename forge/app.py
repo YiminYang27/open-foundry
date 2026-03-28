@@ -1,0 +1,86 @@
+"""Application entry point -- composition root for the open-foundry orchestrator."""
+
+import shutil
+
+from forge.llm import ClaudeCLI
+from forge.models import ForumContext
+from forge.roles import RoleStore, parse_mission
+from forge.session_io import create_session, resume_session, update_state
+from forge.utils.cli import parse_args, resolve_paths
+from forge.utils.logger import logger
+from forge.workflow import run_forum
+
+
+def main() -> None:
+    args = parse_args()
+
+    if args.feedback and not args.resume:
+        logger.fatal("--feedback requires --resume to specify which session to continue")
+    if args.synthesize_only and not args.resume:
+        logger.fatal("--synthesize-only requires --resume to specify the session")
+
+    project_root, topic_path, resume_dir = resolve_paths(args)
+
+    # Check prerequisites
+    if not shutil.which("claude"):
+        logger.fatal("claude CLI not found in PATH")
+
+    # Parse mission
+    try:
+        (agent_names, max_turns, model, orch_name, title, topic_body,
+         execute_after) = parse_mission(topic_path)
+    except ValueError as e:
+        logger.fatal(str(e))
+
+    # Apply CLI overrides
+    if args.max_turns is not None:
+        max_turns = args.max_turns
+    if args.model is not None:
+        model = args.model
+
+    if not agent_names:
+        logger.fatal("No agents defined in topic file")
+
+    # Wire dependencies
+    role_store = RoleStore(project_root / "roles")
+    llm = ClaudeCLI(model=model, dry_run=args.dry_run)
+
+    logger.info("Validating role files...")
+    agents = [role_store.get_agent(name) for name in agent_names]
+    logger.ok(f"All {len(agents)} role files validated")
+
+    orch = role_store.get_orchestrator(orch_name)
+    logger.info(f"Orchestrator: {orch_name}")
+
+    ctx = ForumContext(
+        agents=agents,
+        orch=orch,
+        agent_list_str="".join(f"- {a.name}: {a.expertise}\n" for a in agents),
+        max_turns=max_turns,
+        topic_body=topic_body,
+        mission_dir=topic_path.parent,
+        recent_window=max(len(agents) + 2, 10),
+    )
+
+    # Session setup
+    state = None
+    if resume_dir:
+        session, state = resume_session(resume_dir, agents)
+    else:
+        slug = (topic_path.parent.name if topic_path.name == "MISSION.md"
+                else topic_path.stem)
+        session = create_session(project_root, slug, topic_path,
+                                 agents, title, max_turns, model, topic_body)
+        update_state(session, "starting", agents, max_turns, model,
+                     str(topic_path))
+
+    logger.set_session_log(session.work_dir / "runtime.log")
+
+    # Run pipeline
+    run_forum(session, ctx, llm, role_store,
+              execute_after=execute_after,
+              feedback=args.feedback,
+              synthesize_only=args.synthesize_only,
+              topic_path=topic_path,
+              mission_source=str(topic_path),
+              state=state)

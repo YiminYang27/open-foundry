@@ -1,11 +1,4 @@
-#!/usr/bin/env python3
-"""
-forge.cli -- Multi-agent discussion orchestrator
-
-Runs a structured discussion between LLM agents with distinct
-perspectives, moderated by an orchestrator that picks speakers
-and detects consensus. All discussion is recorded to a readable
-transcript.
+"""CLI argument parsing and path resolution utilities.
 
 Usage:
   ./scripts/forge.py <mission> [OPTIONS]
@@ -34,18 +27,13 @@ Examples:
 """
 
 import argparse
-import shutil
 from pathlib import Path
 
-from forge.llm import ClaudeCLI
-from forge.models import ForumContext
-from forge.roles import RoleStore, parse_mission
-from forge.session_io import create_session, resume_session, update_state
 from forge.utils.logger import logger
-from forge.workflow import run_forum
 
 
-def _parse_args() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Multi-agent discussion orchestrator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -71,13 +59,15 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
+def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     """Resolve project root, topic path, and optional resume dir.
     Returns (project_root, topic_path, resume_dir).
     """
     # Find project root by walking up to CLAUDE.md
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
+    if not (project_root / "CLAUDE.md").exists():
+        project_root = project_root.parent
     if not (project_root / "CLAUDE.md").exists():
         project_root = project_root.parent
 
@@ -111,82 +101,3 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
             logger.fatal(f"Resume directory not found: {resume_dir}")
 
     return project_root, topic_path, resume_dir
-
-
-def main() -> None:
-    args = _parse_args()
-
-    if args.feedback and not args.resume:
-        logger.fatal("--feedback requires --resume to specify which session to continue")
-    if args.synthesize_only and not args.resume:
-        logger.fatal("--synthesize-only requires --resume to specify the session")
-
-    project_root, topic_path, resume_dir = _resolve_paths(args)
-
-    # Check prerequisites
-    if not shutil.which("claude"):
-        logger.fatal("claude CLI not found in PATH")
-
-    # Parse mission
-    try:
-        (agent_names, max_turns, model, orch_name, title, topic_body,
-         execute_after) = parse_mission(topic_path)
-    except ValueError as e:
-        logger.fatal(str(e))
-
-    # Apply CLI overrides
-    if args.max_turns is not None:
-        max_turns = args.max_turns
-    if args.model is not None:
-        model = args.model
-
-    if not agent_names:
-        logger.fatal("No agents defined in topic file")
-
-    # Wire dependencies
-    role_store = RoleStore(project_root / "roles")
-    llm = ClaudeCLI(model=model, dry_run=args.dry_run)
-
-    logger.info("Validating role files...")
-    agents = [role_store.get_agent(name) for name in agent_names]
-    logger.ok(f"All {len(agents)} role files validated")
-
-    orch = role_store.get_orchestrator(orch_name)
-    logger.info(f"Orchestrator: {orch_name}")
-
-    ctx = ForumContext(
-        agents=agents,
-        orch=orch,
-        agent_list_str="".join(f"- {a.name}: {a.expertise}\n" for a in agents),
-        max_turns=max_turns,
-        topic_body=topic_body,
-        mission_dir=topic_path.parent,
-        recent_window=max(len(agents) + 2, 10),
-    )
-
-    # Session setup
-    state = None
-    if resume_dir:
-        session, state = resume_session(resume_dir, agents)
-    else:
-        slug = (topic_path.parent.name if topic_path.name == "MISSION.md"
-                else topic_path.stem)
-        session = create_session(project_root, slug, topic_path,
-                                 agents, title, max_turns, model, topic_body)
-        update_state(session, "starting", agents, max_turns, model,
-                     str(topic_path))
-
-    logger.set_session_log(session.work_dir / "runtime.log")
-
-    # Run pipeline
-    run_forum(session, ctx, llm, role_store,
-              execute_after=execute_after,
-              feedback=args.feedback,
-              synthesize_only=args.synthesize_only,
-              topic_path=topic_path,
-              mission_source=str(topic_path),
-              state=state)
-
-
-if __name__ == "__main__":
-    main()

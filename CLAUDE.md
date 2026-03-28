@@ -25,6 +25,7 @@ open-foundry/
   sessions/             Session output: transcript, notes, synthesis (git-ignored)
   forge/                Python package (the orchestrator engine)
     __init__.py         Package entry point, exports main()
+    app.py              Composition root: dependency wiring + pipeline launch
     workflow.py         Discussion loop + phase transitions
     orchestrator.py     Speaker selection, verification, finalization
     agents.py           Agent speak/execute, status signal parsing
@@ -32,7 +33,7 @@ open-foundry/
     session_io.py       Session I/O: transcript, state, utterances
     models/             Data classes: Agent, Orchestrator, Session
     utils/              Shared utilities
-      cli.py            CLI parsing + dependency wiring
+      cli.py            CLI argument parsing + path resolution
       logger.py         Logging helpers + color constants
     roles/              RoleStore: role/mission file loading
     llm/                LLMProvider protocol + ClaudeCLI implementation
