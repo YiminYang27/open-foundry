@@ -91,7 +91,7 @@ class MissionWorkflow:
         # Banner
         title_line = session.transcript.read_text(encoding="utf-8").split("\n")[0]
         title = title_line.replace("# Discussion: ", "") if title_line.startswith("# Discussion: ") else "Discussion"
-        print(f"\n{BOLD}=== Forum Discussion ==={NC}\n")
+        print(f"\n{BOLD}=== Mission Discussion ==={NC}\n")
         logger.info(f"Topic:     {title}")
         logger.info(f"Agents:    {' '.join(a.name for a in ctx.agents)}")
         logger.info(f"Max turns: {ctx.max_turns}")
@@ -173,7 +173,7 @@ class MissionWorkflow:
                     mission_source=mission_source,
                     llm=llm,
                 )
-                print(f"\n{BOLD}=== Forum Complete "
+                print(f"\n{BOLD}=== Mission Complete "
                       f"(consensus at turn {session.utterances}) ==={NC}")
                 logger.info(f"Transcript: {session.transcript}")
                 synthesis = session.work_dir / "synthesis.md"
@@ -301,7 +301,7 @@ class MissionWorkflow:
             llm=llm,
         )
 
-        print(f"\n{BOLD}=== Forum Complete "
+        print(f"\n{BOLD}=== Mission Complete "
               f"({session.utterances} turns, no consensus) ==={NC}")
         logger.info(f"Transcript: {session.transcript}")
         synthesis = session.work_dir / "synthesis.md"

@@ -14,13 +14,13 @@ separation of concerns, dependency injection, and no module-level mutable state.
 forge/
   __init__.py              Package entry, exports main()
   app.py              96   Composition root: dependency wiring + pipeline launch
-  workflow.py        332   ForumWorkflow: discussion loop + phase transitions
+  workflow.py        332   MissionWorkflow: discussion loop + phase transitions
   orchestrator.py    277   OrchestratorService: pick, verify, finalize, execution
   agents.py          118   AgentService: speak, execute, parse_status_signal
   synthesis.py       133   SynthesisService: synthesize, review
   session_io.py      349   SessionManager: session lifecycle + all file I/O
   models/
-    models.py         57   Agent, Orchestrator, Session, ForumContext
+    models.py         57   Agent, Orchestrator, Session, MissionContext
   llm/
     llm_provider.py   41   LLMProvider ABC (complete + stream contract)
     claude_cli.py     99   ClaudeCLI(LLMProvider) concrete implementation
@@ -43,14 +43,14 @@ app.py (composition root)
   |
   |-- LLMProviderFactory.create("claude-cli", model, dry_run)
   |     -> returns LLMProvider (abstraction)
-  |-- constructs --> RoleStore, SessionManager, ForumContext
+  |-- constructs --> RoleStore, SessionManager, MissionContext
   |-- constructs --> AgentService(llm: LLMProvider, smgr)
   |-- constructs --> OrchestratorService(llm: LLMProvider, smgr)
   |-- constructs --> SynthesisService(llm: LLMProvider, smgr, role_store)
-  |-- constructs --> ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
-  +-- calls      --> workflow.run()
+  |-- constructs --> MissionWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
+  +-- calls      --> workflow.execute()
 
-ForumWorkflow ---delegates--> OrchestratorService, AgentService,
+MissionWorkflow ---delegates--> OrchestratorService, AgentService,
                               SynthesisService, SessionManager
 
 OrchestratorService ---uses--> SessionManager, LLMProvider, load_template, extract_json
@@ -145,11 +145,11 @@ app.py:55     orch = role_store.get_orchestrator("default")
 - Returns `Orchestrator(name, pick_persona, close_persona, verify_persona)`
 
 ```
-app.py:58     ctx = ForumContext(agents, orch, agent_list_str, max_turns=5,
+app.py:58     ctx = MissionContext(agents, orch, agent_list_str, max_turns=5,
                                  mission_body, mission_dir, recent_window=10)
 ```
 
-`models/models.py:48 ForumContext` -- immutable dataclass aggregating all
+`models/models.py:48 MissionContext` -- immutable dataclass aggregating all
 shared discussion parameters.
 
 ### Step 5: Session Setup (app.py:68-78)
@@ -180,7 +180,7 @@ app.py:77     smgr.update_state("starting", agents, 5, "haiku", str(mission_path
 app.py:83     agent_svc  = AgentService(llm, smgr)
 app.py:84     orch_svc   = OrchestratorService(llm, smgr)
 app.py:85     synth_svc  = SynthesisService(llm, smgr, role_store)
-app.py:88     workflow    = ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
+app.py:88     workflow    = MissionWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
 ```
 
 Each service stores references to `llm: LLMProvider` and `smgr: SessionManager`.
@@ -189,11 +189,11 @@ No service knows about concrete `ClaudeCLI` -- all typed against `LLMProvider`.
 ### Step 7: Pipeline Start (app.py:89 -> workflow.py:41)
 
 ```
-app.py:89     workflow.run(execute_after=False, feedback=None,
+app.py:89     workflow.execute(execute_after=False, feedback=None,
                            synthesize_only=False, mission_path=..., ...)
 ```
 
-`workflow.py:41 ForumWorkflow.run()`:
+`workflow.py:41 MissionWorkflow.execute()`:
 - Lines 61-74: Check if resuming completed session (not applicable here)
 - Lines 84-89: Register signal handlers (SIGINT -> graceful exit,
   SIGQUIT -> pause)
@@ -402,12 +402,12 @@ workflow.py:322       self._synth_svc.review()
 ### Step 14: Done (workflow.py:176-182 or 304-309)
 
 ```
-workflow.py:176   print("=== Forum Complete (consensus at turn 4) ===")
+workflow.py:176   print("=== Mission Complete (consensus at turn 4) ===")
 workflow.py:178   logger.info(f"Transcript: {session.transcript}")
 workflow.py:180   logger.info(f"Synthesis: {synthesis}")
 ```
 
-Control returns to `app.py:89 workflow.run()` -> `main()` exits.
+Control returns to `app.py:89 workflow.execute()` -> `main()` exits.
 
 ### Shortcut: Synthesize-Only Mode
 
@@ -444,12 +444,12 @@ transcript for the next orchestrator pick.
 | Module | Class | Methods | Single Responsibility |
 |--------|-------|---------|----------------------|
 | app.py | - | main() | Parse CLI, wire deps, launch pipeline |
-| workflow.py | ForumWorkflow | run, _run_discussion_loop, _finalize_and_synthesize, _check_pause | Loop control + phase transitions |
+| workflow.py | MissionWorkflow | execute, _run_discussion_loop, _finalize_and_synthesize, _check_pause | Loop control + phase transitions |
 | orchestrator.py | OrchestratorService | pick_speaker, verify_task, finalize, run_execution_phase, next_round_robin | All orchestrator-driven LLM calls |
 | agents.py | AgentService | speak, execute, parse_status_signal | All agent-driven LLM calls |
 | synthesis.py | SynthesisService | synthesize, review | Post-discussion synthesis + quality check |
 | session_io.py | SessionManager | create, resume, update_state, append_*, archive_outputs, inject_operator_turn, get_transcript_context, truncate_transcript_for_closing | All session filesystem I/O |
-| models/ | Agent, Orchestrator, Session, ForumContext | (dataclasses) | Pure data structures |
+| models/ | Agent, Orchestrator, Session, MissionContext | (dataclasses) | Pure data structures |
 | llm/llm_provider.py | LLMProvider (ABC) | complete, stream | Abstract base -- stream returns None if unsupported |
 | llm/claude_cli.py | ClaudeCLI(LLMProvider) | complete, stream | Concrete provider wrapping `claude -p` CLI |
 | llm/llm_provider_factory.py | LLMProviderFactory | create(provider, model, dry_run) | Factory for constructing providers by name |
@@ -608,7 +608,7 @@ All type hints change from `ClaudeCLI` to `LLMProvider`:
 - `OrchestratorService.__init__(self, llm: LLMProvider, ...)`
 - `AgentService.__init__(self, llm: LLMProvider, ...)`
 - `SynthesisService.__init__(self, llm: LLMProvider, ...)`
-- `ForumWorkflow.__init__(self, ..., llm: LLMProvider, ...)`
+- `MissionWorkflow.__init__(self, ..., llm: LLMProvider, ...)`
 
 `synthesis.py` changes from `hasattr` check to return value check:
 ```python
@@ -641,8 +641,8 @@ app.py
   |-- AgentService(llm: LLMProvider, smgr)
   |-- OrchestratorService(llm: LLMProvider, smgr)
   |-- SynthesisService(llm: LLMProvider, smgr, role_store)
-  |-- ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
-  +-- workflow.run(...)
+  |-- MissionWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
+  +-- workflow.execute(...)
 ```
 
 No module outside `forge/llm/` and `forge/app.py` ever references `ClaudeCLI`
