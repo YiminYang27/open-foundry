@@ -46,7 +46,7 @@ class Session:
 
 
 @dataclass
-class ForumContext:
+class MissionContext:
     """Aggregates parameters shared across discussion functions."""
     agents: list[Agent]
     orch: Orchestrator

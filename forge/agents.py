@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from forge.llm import LLMProvider
-from forge.models import Agent, ForumContext, Session
+from forge.models import Agent, MissionContext, Session
 from forge.prompts import load_template
 from forge.session_io import SessionManager
 
@@ -33,7 +33,7 @@ class AgentService:
                 return {"signal": "INCONCLUSIVE"}
         return {"signal": "NONE"}
 
-    def speak(self, agent: Agent, ctx: ForumContext) -> str:
+    def speak(self, agent: Agent, ctx: MissionContext) -> str:
         session = self._smgr.session
 
         transcript_ctx = self._smgr.get_transcript_context(
@@ -64,7 +64,7 @@ class AgentService:
             return f"[dry run response from {agent.name}]" if self._llm.dry_run else "[agent declined]"
         return result
 
-    def execute(self, agent: Agent, ctx: ForumContext, task: dict) -> str:
+    def execute(self, agent: Agent, ctx: MissionContext, task: dict) -> str:
         """Have an agent execute a specific implementation task."""
         session = self._smgr.session
 

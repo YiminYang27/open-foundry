@@ -3,7 +3,7 @@
 import shutil
 
 from forge.llm import LLMProviderFactory
-from forge.models import ForumContext
+from forge.models import MissionContext
 from forge.roles import RoleStore, parse_mission
 from forge.session_io import SessionManager
 from forge.agents import AgentService
@@ -11,7 +11,7 @@ from forge.orchestrator import OrchestratorService
 from forge.synthesis import SynthesisService
 from forge.utils.cli import parse_args, resolve_paths
 from forge.utils.logger import logger
-from forge.workflow import ForumWorkflow
+from forge.workflow import MissionWorkflow
 
 
 def main() -> None:
@@ -55,7 +55,7 @@ def main() -> None:
     orch = role_store.get_orchestrator(orch_name)
     logger.info(f"Orchestrator: {orch_name}")
 
-    ctx = ForumContext(
+    ctx = MissionContext(
         agents=agents,
         orch=orch,
         agent_list_str="".join(f"- {a.name}: {a.expertise}\n" for a in agents),
@@ -85,8 +85,8 @@ def main() -> None:
     synth_svc = SynthesisService(llm, smgr, role_store)
 
     # Build and run workflow
-    workflow = ForumWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
-    workflow.run(
+    workflow = MissionWorkflow(smgr, ctx, llm, orch_svc, agent_svc, synth_svc)
+    workflow.execute(
         execute_after=execute_after,
         feedback=args.feedback,
         synthesize_only=args.synthesize_only,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from forge.agents import AgentService
 from forge.llm import LLMProvider
-from forge.models import ForumContext, Session
+from forge.models import MissionContext, Session
 from forge.orchestrator import OrchestratorService
 from forge.session_io import SessionManager
 from forge.synthesis import SynthesisService
@@ -24,10 +24,10 @@ def _on_pause_signal(*_):
     logger.info("Pause requested -- waiting for current turn to finish...")
 
 
-class ForumWorkflow:
+class MissionWorkflow:
     """Orchestrates the full discussion pipeline."""
 
-    def __init__(self, smgr: SessionManager, ctx: ForumContext,
+    def __init__(self, smgr: SessionManager, ctx: MissionContext,
                  llm: LLMProvider,
                  orch_svc: OrchestratorService, agent_svc: AgentService,
                  synth_svc: SynthesisService) -> None:
@@ -38,7 +38,7 @@ class ForumWorkflow:
         self._agent_svc = agent_svc
         self._synth_svc = synth_svc
 
-    def run(self, *, execute_after: bool = False,
+    def execute(self, *, execute_after: bool = False,
             feedback: str | None = None,
             synthesize_only: bool = False,
             mission_path: Path,

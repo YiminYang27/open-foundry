@@ -7,7 +7,7 @@ from pathlib import Path
 
 from forge.llm import LLMProvider
 from forge.utils.parsers import extract_json
-from forge.models import Agent, ForumContext, Orchestrator, Session
+from forge.models import Agent, MissionContext, Orchestrator, Session
 from forge.prompts import load_template
 from forge.session_io import SessionManager
 from forge.utils.logger import logger, BOLD, NC
@@ -29,7 +29,7 @@ class OrchestratorService:
                 return agents[(i + 1) % len(agents)].name
         return agents[0].name
 
-    def pick_speaker(self, ctx: ForumContext) -> dict:
+    def pick_speaker(self, ctx: MissionContext) -> dict:
         session = self._smgr.session
 
         transcript_ctx = self._smgr.get_transcript_context(
@@ -116,7 +116,7 @@ to discuss, review, or debate."""
 
         return parsed
 
-    def verify_task(self, ctx: ForumContext, task: dict,
+    def verify_task(self, ctx: MissionContext, task: dict,
                     agent_response: str) -> dict:
         """Verify a completed task using the orchestrator's verification persona."""
         orch = ctx.orch
@@ -141,7 +141,7 @@ to discuss, review, or debate."""
 
         return extract_json(raw)
 
-    def finalize(self, ctx: ForumContext, consensus_status: str) -> None:
+    def finalize(self, ctx: MissionContext, consensus_status: str) -> None:
         session = self._smgr.session
 
         transcript_content = session.transcript.read_text(encoding="utf-8")
@@ -183,7 +183,7 @@ to discuss, review, or debate."""
 
         logger.ok(f"Closing summary written to {closing_file}")
 
-    def run_execution_phase(self, ctx: ForumContext, agent_svc) -> None:
+    def run_execution_phase(self, ctx: MissionContext, agent_svc) -> None:
         """Decompose closing summary into tasks and execute them."""
         session = self._smgr.session
 
